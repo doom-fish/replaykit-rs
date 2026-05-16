@@ -1,4 +1,4 @@
-# ReplayKit.framework coverage for `replaykit-rs` v0.2.0
+# ReplayKit.framework coverage for `replaykit-rs` v0.2.1
 
 Legend:
 
@@ -11,6 +11,7 @@ Notes:
 - The requested **RPPreviewView** area maps to Apple's `RPPreviewViewController` on macOS.
 - The requested **RPBroadcastActivityViewController** area maps to macOS `RPBroadcastActivityController`; the iOS view-controller type is surfaced explicitly as `NotSupported`.
 - The requested **RPSampleBufferDelegate** area is implemented through `RPScreenRecorder.startCapture` + `SampleBufferCaptureSession` + `SampleBufferType`.
+- The broadcast-extension authoring surface from `RPBroadcastExtension.h` is represented by `BroadcastExtensionContext`, `BroadcastHandler`, `BroadcastSampleHandler`, and `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY`.
 
 ## ReplayKit.h
 
@@ -93,24 +94,24 @@ Notes:
 
 | API | Status | Rust surface | Notes |
 | --- | --- | --- | --- |
-| `NSExtensionContext.loadBroadcastingApplicationInfoWithCompletion:` | ⏭️ skipped | — | Broadcast UI extension-only API |
+| `NSExtensionContext.loadBroadcastingApplicationInfoWithCompletion:` | ✅ | `BroadcastExtensionContext::load_broadcasting_application_info` | Requires an extension-owned context to return real app metadata |
 | Deprecated `completeRequestWithBroadcastURL:broadcastConfiguration:setupInfo:` | ⏭️ skipped | — | Unavailable on macOS |
-| `completeRequestWithBroadcastURL:setupInfo:` | ⏭️ skipped | — | Broadcast UI extension-only API |
-| `RPBroadcastHandler` | ⏭️ skipped | — | Upload-extension subclass API |
-| `updateServiceInfo:` | ⏭️ skipped | — | Upload-extension callback API |
-| `updateBroadcastURL:` | ⏭️ skipped | — | Upload-extension callback API |
+| `completeRequestWithBroadcastURL:setupInfo:` | ✅ | `BroadcastExtensionContext::complete_request_with_broadcast_url`, `BroadcastExtensionContext::complete_request_with_broadcast_url_and_setup_info` | |
+| `RPBroadcastHandler` | ✅ | `BroadcastHandler` | |
+| `updateServiceInfo:` | ✅ | `BroadcastHandler::update_service_info` | JSON is bridged to the ReplayKit dictionary type |
+| `updateBroadcastURL:` | ✅ | `BroadcastHandler::update_broadcast_url` | |
 | `RPBroadcastMP4ClipHandler` | ⏭️ skipped | — | Unavailable on macOS |
 | `RPSampleBufferType` | ✅ | `SampleBufferType` | |
 | `RPVideoSampleOrientationKey` | ✅ | `CaptureSample::video_orientation` | Raw attachment value is forwarded |
-| `RPApplicationInfoBundleIdentifierKey` | ⏭️ skipped | — | Broadcast annotation key for upload extensions |
-| `RPBroadcastSampleHandler` | ⏭️ skipped | — | Upload-extension subclass API |
-| `broadcastStartedWithSetupInfo:` | ⏭️ skipped | — | Upload-extension subclass API |
-| `broadcastPaused` | ⏭️ skipped | — | Upload-extension subclass API |
-| `broadcastResumed` | ⏭️ skipped | — | Upload-extension subclass API |
-| `broadcastFinished` | ⏭️ skipped | — | Upload-extension subclass API |
-| `broadcastAnnotatedWithApplicationInfo:` | ⏭️ skipped | — | iOS-only upload-extension API |
-| `processSampleBuffer:withType:` | ⏭️ skipped | — | Upload-extension subclass API |
-| `finishBroadcastWithError:` | ⏭️ skipped | — | Upload-extension subclass API |
+| `RPApplicationInfoBundleIdentifierKey` | ✅ | `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY` | |
+| `RPBroadcastSampleHandler` | ✅ | `BroadcastSampleHandler` | |
+| `broadcastStartedWithSetupInfo:` | ✅ | `BroadcastSampleHandler::broadcast_started`, `BroadcastSampleHandler::broadcast_started_with_setup_info` | |
+| `broadcastPaused` | ✅ | `BroadcastSampleHandler::broadcast_paused` | |
+| `broadcastResumed` | ✅ | `BroadcastSampleHandler::broadcast_resumed` | |
+| `broadcastFinished` | ✅ | `BroadcastSampleHandler::broadcast_finished` | |
+| `broadcastAnnotatedWithApplicationInfo:` | ✅ | `BroadcastSampleHandler::broadcast_annotated_with_application_info` | Accepts JSON dictionaries, including `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY` |
+| `processSampleBuffer:withType:` | ⏭️ skipped | — | Raw `CMSampleBufferRef` injection is not exposed through the safe Rust API |
+| `finishBroadcastWithError:` | ✅ | `BroadcastSampleHandler::finish_broadcast_with_error` | Accepts `ReplayKitFrameworkError` payloads |
 
 ## RPError.h
 

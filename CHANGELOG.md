@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-16
+
+### Added
+
+- Added `BroadcastExtensionContext` for `NSExtensionContext` broadcast-extension helpers, including `load_broadcasting_application_info` and `complete_request_with_broadcast_url`
+- Added `BroadcastHandler`, `BroadcastSampleHandler`, and the `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY` constant for ReplayKit broadcast-extension authoring APIs
+- Added broadcast-extension integration tests and the `08_rp_broadcast_extension_support` example
+
 ## [0.2.0] - 2026-05-16
 
 ### Added

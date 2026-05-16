@@ -12,6 +12,7 @@ Safe Rust bindings for Apple's **`ReplayKit`** framework on macOS.
 - macOS `RPBroadcastActivityController` through `BroadcastActivityControllerHandle::show`
 - `RPPreviewViewController` delegate callbacks and support helpers
 - `RPSampleBufferType` and `RPScreenRecorder.startCapture` via `SampleBufferCaptureSession`
+- Broadcast-extension authoring helpers via `BroadcastExtensionContext`, `BroadcastHandler`, `BroadcastSampleHandler`, and `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY`
 - Explicit `NotSupported` wrappers for macOS-unavailable `RPBroadcastActivityViewController`, `RPSystemBroadcastPickerView`, and `RPBroadcastConfiguration`
 - Typed `RPRecordingErrorCode` mapping plus replay/broadcast error domains
 

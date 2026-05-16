@@ -1,16 +1,16 @@
 # replaykit-rs coverage audit (vs MacOSX26.2.sdk)
 
 SDK_PUBLIC_SYMBOLS: 18
-VERIFIED: 14
-GAPS: 4
+VERIFIED: 18
+GAPS: 0
 EXEMPT: 0
-COVERAGE_PCT: 77.8%
+COVERAGE_PCT: 100.0%
 
 Notes:
 
 - This audit follows the shared rubric from `audit-instructions.md`: only macOS-available top-level `@interface`, defined `@protocol`, enum typedef, category, and exported constant symbols are counted.
 - iOS/tvOS-only or `API_UNAVAILABLE(macos)` symbols such as `RPBroadcastActivityViewController`, `RPSystemBroadcastPickerView`, and `RPBroadcastConfiguration` are filtered out rather than counted as gaps, even though the crate exposes explicit `NotSupported` wrappers for them.
-- The remaining gaps are all broadcast-extension authoring APIs from `RPBroadcastExtension.h`; the app-side recording, preview, and broadcast-control surface is covered.
+- `RPBroadcastExtension.h` is now covered through `BroadcastExtensionContext`, `BroadcastHandler`, `BroadcastSampleHandler`, and `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY` alongside the existing app-side recording, preview, and broadcast-control surface.
 - `COVERAGE.md` remains the member-by-member matrix; this file is the top-level symbol audit.
 
 ## 🟢 VERIFIED
@@ -25,19 +25,19 @@ Notes:
 | `RPBroadcastActivityControllerDelegate` | protocol | `RPBroadcast.h` | `BroadcastActivityControllerHandle::show` callback |
 | `RPBroadcastController` | class | `RPBroadcast.h` | `BroadcastController` |
 | `RPBroadcastControllerDelegate` | protocol | `RPBroadcast.h` | `BroadcastController::observe`, `BroadcastControllerEvent` |
+| `NSExtensionContext (RPBroadcastExtension)` | category | `RPBroadcastExtension.h` | `BroadcastExtensionContext` |
+| `RPBroadcastHandler` | class | `RPBroadcastExtension.h` | `BroadcastHandler` |
 | `RPSampleBufferType` | enum | `RPBroadcastExtension.h` | `SampleBufferType`, `CaptureSample::sample_type` |
 | `RPVideoSampleOrientationKey` | constant | `RPBroadcastExtension.h` | `CaptureSample::video_orientation` |
+| `RPApplicationInfoBundleIdentifierKey` | constant | `RPBroadcastExtension.h` | `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY` |
+| `RPBroadcastSampleHandler` | class | `RPBroadcastExtension.h` | `BroadcastSampleHandler` |
 | `RPRecordingErrorDomain` | constant | `RPError.h` | `RP_RECORDING_ERROR_DOMAIN` |
 | `SCStreamErrorDomain` | constant | `RPError.h` | `SC_STREAM_ERROR_DOMAIN` |
 | `RPRecordingErrorCode` | enum | `RPError.h` | `RecordingErrorCode` |
 
 ## 🔴 GAPS
-| Symbol | Kind | Header | Notes |
-| --- | --- | --- | --- |
-| `NSExtensionContext (RPBroadcastExtension)` | category | `RPBroadcastExtension.h` | Broadcast UI extension methods (`loadBroadcastingApplicationInfo…`, `completeRequestWithBroadcastURL…`) are not wrapped; the crate only targets app-side APIs. |
-| `RPBroadcastHandler` | class | `RPBroadcastExtension.h` | Upload-extension base class is not exposed. |
-| `RPApplicationInfoBundleIdentifierKey` | constant | `RPBroadcastExtension.h` | Annotation key used by broadcast-extension metadata is not surfaced. |
-| `RPBroadcastSampleHandler` | class | `RPBroadcastExtension.h` | Sample-buffer broadcast extension subclass API is not exposed. |
+
+No remaining gaps.
 
 ## ⏭️ EXEMPT
 | Symbol | Kind | Header | Reason | SDK attribute |

@@ -10,6 +10,9 @@ pub mod broadcast;
 pub mod broadcast_activity_view_controller;
 pub mod broadcast_configuration;
 pub mod broadcast_controller;
+pub mod broadcast_extension;
+pub mod broadcast_handler;
+pub mod broadcast_sample_handler;
 pub mod error;
 mod ffi;
 pub mod preview_view;
@@ -26,6 +29,12 @@ pub use broadcast_configuration::BroadcastConfiguration;
 pub use broadcast_controller::{
     BroadcastController, BroadcastControllerEvent, BroadcastControllerObserver,
 };
+pub use broadcast_extension::{
+    BroadcastExtensionContext, BroadcastingApplicationInfo,
+    RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY,
+};
+pub use broadcast_handler::BroadcastHandler;
+pub use broadcast_sample_handler::BroadcastSampleHandler;
 pub use error::{
     RecordingErrorCode, ReplayKitError, ReplayKitFrameworkError, RP_RECORDING_ERROR_DOMAIN,
     SC_STREAM_ERROR_DOMAIN,
@@ -49,6 +58,12 @@ pub mod prelude {
     pub use crate::broadcast_controller::{
         BroadcastController, BroadcastControllerEvent, BroadcastControllerObserver,
     };
+    pub use crate::broadcast_extension::{
+        BroadcastExtensionContext, BroadcastingApplicationInfo,
+        RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY,
+    };
+    pub use crate::broadcast_handler::BroadcastHandler;
+    pub use crate::broadcast_sample_handler::BroadcastSampleHandler;
     pub use crate::error::{
         RecordingErrorCode, ReplayKitError, ReplayKitFrameworkError, RP_RECORDING_ERROR_DOMAIN,
         SC_STREAM_ERROR_DOMAIN,

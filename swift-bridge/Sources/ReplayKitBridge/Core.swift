@@ -191,6 +191,55 @@ func rkFileURL(from pathCString: UnsafePointer<CChar>?) throws -> URL {
     return URL(fileURLWithPath: String(cString: pathCString))
 }
 
+func rkURL(from cString: UnsafePointer<CChar>?, context: String) throws -> URL {
+    guard let cString else {
+        throw RKBridgeError.invalidArgument("missing \(context)")
+    }
+    let string = String(cString: cString)
+    guard let url = URL(string: string) else {
+        throw RKBridgeError.invalidArgument("invalid \(context): \(string)")
+    }
+    return url
+}
+
+func rkNSCodingObject(fromJSONValue value: Any, context: String) throws -> NSObject & NSCoding {
+    switch value {
+    case let string as String:
+        return NSString(string: string)
+    case let number as NSNumber:
+        return number
+    case let array as [Any]:
+        let bridged = try array.map { try rkNSCodingObject(fromJSONValue: $0, context: context) }
+        return NSArray(array: bridged)
+    case let dict as [String: Any]:
+        let bridged = try dict.map { key, value in
+            (key, try rkNSCodingObject(fromJSONValue: value, context: context))
+        }
+        return NSDictionary(dictionary: Dictionary(uniqueKeysWithValues: bridged))
+    case is NSNull:
+        return NSNull()
+    default:
+        throw RKBridgeError.invalidArgument("\(context) contains unsupported JSON value: \(value)")
+    }
+}
+
+func rkDictionaryFromJSON(
+    _ jsonCString: UnsafePointer<CChar>?,
+    context: String
+) throws -> [String: NSObject & NSCoding]? {
+    guard let jsonCString else { return nil }
+    let data = Data(String(cString: jsonCString).utf8)
+    let object = try JSONSerialization.jsonObject(with: data)
+    guard let dict = object as? [String: Any] else {
+        throw RKBridgeError.invalidArgument("\(context) must encode a JSON object")
+    }
+    var result: [String: NSObject & NSCoding] = [:]
+    for (key, value) in dict {
+        result[key] = try rkNSCodingObject(fromJSONValue: value, context: context)
+    }
+    return result
+}
+
 // MARK: - Semaphore / Task helpers
 
 func rkBlockOnMainActorAsync<T>(

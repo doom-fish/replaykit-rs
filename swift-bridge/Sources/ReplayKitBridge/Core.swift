@@ -1,5 +1,4 @@
 import Foundation
-import ReplayKit
 
 // MARK: - Status codes
 
@@ -39,6 +38,17 @@ func rk_release(_ ptr: UnsafeMutableRawPointer) {
     Unmanaged<AnyObject>.fromOpaque(ptr).release()
 }
 
+@_cdecl("rk_object_release")
+public func rk_object_release(_ ptr: UnsafeMutableRawPointer) {
+    rk_release(ptr)
+}
+
+@_cdecl("rk_object_class_name")
+public func rk_object_class_name(_ ptr: UnsafeMutableRawPointer) -> UnsafeMutablePointer<CChar>? {
+    let object = Unmanaged<AnyObject>.fromOpaque(ptr).takeUnretainedValue()
+    return rkCString(NSStringFromClass(type(of: object)))
+}
+
 // MARK: - Error helpers
 
 enum RKBridgeError: Error, CustomStringConvertible {
@@ -50,9 +60,9 @@ enum RKBridgeError: Error, CustomStringConvertible {
     var statusCode: Int32 {
         switch self {
         case .invalidArgument: return RK_INVALID_ARGUMENT
-        case .timedOut:        return RK_TIMED_OUT
-        case .notSupported:    return RK_NOT_SUPPORTED
-        case .unknown:         return RK_UNKNOWN
+        case .timedOut: return RK_TIMED_OUT
+        case .notSupported: return RK_NOT_SUPPORTED
+        case .unknown: return RK_UNKNOWN
         }
     }
 
@@ -89,23 +99,96 @@ func rkEncodeJSON<T: Encodable>(_ value: T) throws -> String {
     return string
 }
 
+func rkErrorMessage(_ error: Error) -> String {
+    if let bridgeError = error as? RKBridgeError {
+        return bridgeError.description
+    }
+    let nsError = error as NSError
+    let payload = RKFrameworkErrorPayload(
+        domain: nsError.domain,
+        code: nsError.code,
+        localizedDescription: nsError.localizedDescription
+    )
+    return (try? rkEncodeJSON(payload)) ?? nsError.localizedDescription
+}
+
+func rkOwnedErrorCString(_ error: Error) -> UnsafeMutablePointer<CChar>? {
+    rkCString(rkErrorMessage(error))
+}
+
 func rkPopulateError(
     _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
     with error: Error
 ) {
-    let message: String
-    if let bridgeError = error as? RKBridgeError {
-        message = bridgeError.description
-    } else {
-        let nsError = error as NSError
-        let payload = RKFrameworkErrorPayload(
-            domain: nsError.domain,
-            code: nsError.code,
-            localizedDescription: nsError.localizedDescription
-        )
-        message = (try? rkEncodeJSON(payload)) ?? nsError.localizedDescription
+    outError?.pointee = rkOwnedErrorCString(error)
+}
+
+@discardableResult
+func rkReturnBridgeError(
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+    _ error: RKBridgeError
+) -> Int32 {
+    rkPopulateError(outError, with: error)
+    return error.statusCode
+}
+
+// MARK: - JSON helpers
+
+func rkJSONCompatibleObject(_ value: Any) -> Any {
+    switch value {
+    case let string as String:
+        return string
+    case let number as NSNumber:
+        return number
+    case let url as URL:
+        return url.absoluteString
+    case let data as Data:
+        return data.base64EncodedString()
+    case let date as Date:
+        return ISO8601DateFormatter().string(from: date)
+    case let array as [Any]:
+        return array.map(rkJSONCompatibleObject)
+    case let set as NSSet:
+        return set.allObjects.map(rkJSONCompatibleObject)
+    case let dict as [AnyHashable: Any]:
+        var mapped: [String: Any] = [:]
+        for (key, value) in dict {
+            mapped[String(describing: key)] = rkJSONCompatibleObject(value)
+        }
+        return mapped
+    case let dict as NSDictionary:
+        var mapped: [String: Any] = [:]
+        dict.forEach { key, value in
+            mapped[String(describing: key)] = rkJSONCompatibleObject(value)
+        }
+        return mapped
+    case is NSNull:
+        return NSNull()
+    default:
+        return String(describing: value)
     }
-    outError?.pointee = rkCString(message)
+}
+
+func rkJSONString(fromJSONObject object: Any) -> String? {
+    guard JSONSerialization.isValidJSONObject(object) else {
+        return nil
+    }
+    guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else {
+        return nil
+    }
+    return String(data: data, encoding: .utf8)
+}
+
+func rkServiceInfoJSON(_ serviceInfo: Any?) -> String? {
+    guard let serviceInfo else { return nil }
+    return rkJSONString(fromJSONObject: rkJSONCompatibleObject(serviceInfo))
+}
+
+func rkFileURL(from pathCString: UnsafePointer<CChar>?) throws -> URL {
+    guard let pathCString else {
+        throw RKBridgeError.invalidArgument("missing file-system path")
+    }
+    return URL(fileURLWithPath: String(cString: pathCString))
 }
 
 // MARK: - Semaphore / Task helpers

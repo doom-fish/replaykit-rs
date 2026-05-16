@@ -14,6 +14,7 @@ fn main() {
     println!("cargo:rustc-link-lib=framework=Foundation");
     println!("cargo:rustc-link-lib=framework=AppKit");
     println!("cargo:rustc-link-lib=framework=AVFoundation");
+    println!("cargo:rustc-link-lib=framework=CoreMedia");
 
     let swift_dir = "swift-bridge";
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR should be set by cargo");

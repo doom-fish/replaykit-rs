@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-16
+
+### Added
+
+- Split the Swift bridge and Rust FFI into per-area files for screen recording, broadcast control, preview UI, sample-buffer capture, and explicit unsupported macOS stubs
+- Extended `ScreenRecorder` with structured state snapshots, microphone/camera/camera-position accessors, camera preview views, preview-controller returns, direct-to-file recording, clip buffering, and detailed delegate forwarding
+- Added `PreviewViewController`, `BroadcastControllerObserver`, `SampleBufferCaptureSession`, `SampleBufferType`, and typed `RPRecordingErrorCode` support
+- Added explicit macOS `NotSupported` wrappers for `RPBroadcastActivityViewController`, `RPSystemBroadcastPickerView`, and `RPBroadcastConfiguration`
+- Added numbered examples, per-area integration tests, and `COVERAGE.md`
+
 ## [0.1.0] - 2025-01-01
 
 ### Added

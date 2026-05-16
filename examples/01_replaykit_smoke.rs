@@ -6,17 +6,20 @@ use std::process::Command;
 use replaykit::ScreenRecorder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // ReplayKit requires a bundle context on macOS — relaunch inside a minimal
-    // .app bundle if we haven't done so already.
     if env::var_os("REPLAYKIT_SMOKE_BUNDLED").is_none() {
         return relaunch_inside_app_bundle();
     }
 
     let recorder = ScreenRecorder::shared()
         .ok_or("RPScreenRecorder.shared() returned nil — is ReplayKit available?")?;
+    let state = recorder.state()?;
 
-    let available = recorder.is_available();
-    println!("ScreenRecorder::shared()?.is_available = {available}");
+    println!("available={}", state.is_available);
+    println!("recording={}", state.is_recording);
+    println!("microphone_enabled={}", state.is_microphone_enabled);
+    println!("camera_enabled={}", state.is_camera_enabled);
+    println!("camera_position={:?}", state.camera_position);
+    println!("has_camera_preview_view={}", state.has_camera_preview_view);
     println!("✅ replaykit recorder OK");
     Ok(())
 }
@@ -47,28 +50,27 @@ fn relaunch_inside_app_bundle() -> Result<(), Box<dyn std::error::Error>> {
 
 fn executable_name(path: &Path) -> String {
     path.file_name()
-        .and_then(|v| v.to_str())
+        .and_then(|value| value.to_str())
         .map_or_else(|| "01_replaykit_smoke".to_owned(), ToOwned::to_owned)
 }
 
 fn info_plist() -> String {
-    [
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-        "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
-        "<plist version=\"1.0\">",
-        "<dict>",
-        "  <key>CFBundleExecutable</key>",
-        "  <string>01_replaykit_smoke</string>",
-        "  <key>CFBundleIdentifier</key>",
-        "  <string>fish.doom.replaykit.smoke</string>",
-        "  <key>CFBundleName</key>",
-        "  <string>replaykit-smoke</string>",
-        "  <key>CFBundlePackageType</key>",
-        "  <string>APPL</string>",
-        "  <key>LSMinimumSystemVersion</key>",
-        "  <string>11.0</string>",
-        "</dict>",
-        "</plist>",
-    ]
-    .join("\n")
+    r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>01_replaykit_smoke</string>
+  <key>CFBundleIdentifier</key>
+  <string>fish.doom.replaykit.smoke</string>
+  <key>CFBundleName</key>
+  <string>replaykit-smoke</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+</dict>
+</plist>
+"#
+    .to_owned()
 }

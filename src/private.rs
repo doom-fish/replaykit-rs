@@ -2,19 +2,29 @@
 
 use core::ffi::c_char;
 use std::ffi::{CStr, CString};
+use std::path::Path;
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::error::ReplayKitError;
 use crate::ffi;
+use crate::ffi::status;
 
 pub fn cstring_from_str(value: &str, context: &str) -> Result<CString, ReplayKitError> {
     CString::new(value).map_err(|error| {
-        ReplayKitError::InvalidArgument(format!(
-            "{context} contains an embedded NUL byte: {error}"
-        ))
+        ReplayKitError::InvalidArgument(format!("{context} contains an embedded NUL byte: {error}"))
     })
+}
+
+pub fn path_cstring(path: &Path, context: &str) -> Result<CString, ReplayKitError> {
+    let path = path.to_str().ok_or_else(|| {
+        ReplayKitError::InvalidArgument(format!(
+            "{context} path is not valid UTF-8: {}",
+            path.display()
+        ))
+    })?;
+    cstring_from_str(path, context)
 }
 
 pub fn json_cstring<T: Serialize + ?Sized>(
@@ -37,7 +47,6 @@ pub unsafe fn take_string(ptr: *mut c_char) -> Option<String> {
         return None;
     }
     let string = CStr::from_ptr(ptr).to_string_lossy().into_owned();
-    // Safety: pointer came from Swift strdup via rk_string_free contract.
     ffi::rk_string_free(ptr);
     Some(string)
 }
@@ -58,4 +67,12 @@ pub unsafe fn parse_json_ptr<T: DeserializeOwned>(
 
 pub unsafe fn error_from_status(status: i32, err_msg: *mut c_char) -> ReplayKitError {
     crate::error::from_swift(status, err_msg)
+}
+
+pub fn result_from_status(status: i32, err_msg: *mut c_char) -> Result<(), ReplayKitError> {
+    if status == status::OK {
+        Ok(())
+    } else {
+        Err(unsafe { error_from_status(status, err_msg) })
+    }
 }

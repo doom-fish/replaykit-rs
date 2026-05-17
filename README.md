@@ -15,6 +15,7 @@ Safe Rust bindings for Apple's **`ReplayKit`** framework on macOS.
 - Broadcast-extension authoring helpers via `BroadcastExtensionContext`, `BroadcastHandler`, `BroadcastSampleHandler`, and `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY`
 - Explicit `NotSupported` wrappers for macOS-unavailable `RPBroadcastActivityViewController`, `RPSystemBroadcastPickerView`, and `RPBroadcastConfiguration`
 - Typed `RPRecordingErrorCode` mapping plus replay/broadcast error domains
+- **Async API** (Tier-1): Executor-agnostic async/await support for recording operations via the `async` feature
 
 ## Requirements
 

@@ -11,6 +11,8 @@ pub mod preview_view;
 pub mod sample_buffer_delegate;
 pub mod screen_recorder;
 pub mod system_broadcast_picker_view;
+#[cfg(feature = "async")]
+pub mod async_api;
 
 pub use broadcast_activity_view_controller::*;
 pub use broadcast_configuration::*;

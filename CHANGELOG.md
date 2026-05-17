@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-17
+
+### Added
+
+- Added `async_api` module (gated by `async` feature) providing async Future-based wrappers for ReplayKit operations
+- Async operations:
+  - `AsyncScreenRecorder::start_recording()` — non-blocking async start recording
+  - `AsyncScreenRecorder::stop_recording()` — non-blocking async stop recording with optional preview
+  - `AsyncScreenRecorder::stop_recording_with_output()` — non-blocking async stop with file output
+  - `AsyncScreenRecorder::discard_recording()` — non-blocking async discard recording
+- Uses executor-agnostic design (works with any async runtime: Tokio, async-std, smol, etc.)
+- Integrated `doom-fish-utils` completion pattern for true async operations (no blocking)
+- Added example `01_async_recording.rs` demonstrating async API usage with `pollster`
+- Added `tests/async_api_tests.rs` for async operation testing
+- Note: `startCapture` and `stopCapture` streaming APIs deferred to Tier-2 Stream implementation
+
 ## [0.2.1] - 2026-05-16
 
 ### Added

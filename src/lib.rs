@@ -13,6 +13,8 @@ pub mod broadcast_controller;
 pub mod broadcast_extension;
 pub mod broadcast_handler;
 pub mod broadcast_sample_handler;
+#[cfg(feature = "async")]
+pub mod async_api;
 pub mod error;
 mod ffi;
 pub mod preview_view;

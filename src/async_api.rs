@@ -41,6 +41,7 @@ use crate::error::ReplayKitError;
 use crate::preview_view::PreviewViewController;
 use crate::screen_recorder::ScreenRecorder;
 use doom_fish_utils::completion::{error_from_cstr, AsyncCompletion, AsyncCompletionFuture};
+use doom_fish_utils::panic_safe::catch_user_panic;
 use std::ffi::c_void;
 use std::future::Future;
 use std::pin::Pin;
@@ -55,12 +56,19 @@ extern "C" fn void_callback(
     error: *const i8,
     user_data: *mut c_void,
 ) {
-    if error.is_null() {
-        unsafe { AsyncCompletion::<()>::complete_ok(user_data, ()) };
-    } else {
-        let msg = unsafe { error_from_cstr(error) };
-        unsafe { AsyncCompletion::<()>::complete_err(user_data, msg) };
-    }
+    catch_user_panic("replaykit::async_api::void_callback", || {
+        if error.is_null() {
+            // SAFETY: user_data is a valid pointer obtained from AsyncCompletion::create() and has never been
+            // completed. This is guaranteed by the Swift bridge which only calls this once per async operation.
+            unsafe { AsyncCompletion::<()>::complete_ok(user_data, ()) };
+        } else {
+            // SAFETY: error is a valid C string pointer from the Swift bridge. error_from_cstr safely handles
+            // invalid UTF-8 and null checks.
+            let msg = unsafe { error_from_cstr(error) };
+            // SAFETY: user_data is a valid pointer from AsyncCompletion::create(), guaranteed called once.
+            unsafe { AsyncCompletion::<()>::complete_err(user_data, msg) };
+        }
+    });
 }
 
 // ============================================================================
@@ -72,17 +80,25 @@ extern "C" fn preview_callback(
     error: *const i8,
     user_data: *mut c_void,
 ) {
-    if error.is_null() {
-        if result.is_null() {
-            unsafe { AsyncCompletion::complete_ok(user_data, None::<PreviewViewController>) };
+    catch_user_panic("replaykit::async_api::preview_callback", || {
+        if error.is_null() {
+            if result.is_null() {
+                // SAFETY: user_data is a valid pointer from AsyncCompletion::create(), guaranteed called once.
+                unsafe { AsyncCompletion::complete_ok(user_data, None::<PreviewViewController>) };
+            } else {
+                // SAFETY: result is a valid RPPreviewViewController pointer from the Swift bridge. from_ptr
+                // wraps it in a reference-counted handle. cast_mut is safe because we own the pointer from FFI.
+                let preview = unsafe { PreviewViewController::from_ptr(result.cast_mut()) };
+                // SAFETY: user_data is a valid pointer from AsyncCompletion::create(), guaranteed called once.
+                unsafe { AsyncCompletion::complete_ok(user_data, Some(preview)) };
+            }
         } else {
-            let preview = unsafe { PreviewViewController::from_ptr(result.cast_mut()) };
-            unsafe { AsyncCompletion::complete_ok(user_data, Some(preview)) };
+            // SAFETY: error is a valid C string pointer from the Swift bridge.
+            let msg = unsafe { error_from_cstr(error) };
+            // SAFETY: user_data is a valid pointer from AsyncCompletion::create(), guaranteed called once.
+            unsafe { AsyncCompletion::<Option<PreviewViewController>>::complete_err(user_data, msg) };
         }
-    } else {
-        let msg = unsafe { error_from_cstr(error) };
-        unsafe { AsyncCompletion::<Option<PreviewViewController>>::complete_err(user_data, msg) };
-    }
+    });
 }
 
 // ============================================================================
@@ -93,6 +109,13 @@ extern "C" fn preview_callback(
 pub struct AsyncStartRecording {
     inner: AsyncCompletionFuture<()>,
 }
+
+// SAFETY: AsyncStartRecording is Send + Sync because:
+// - AsyncCompletionFuture<()> is Send + Sync for Send payloads
+// - The unit type () is Send + Sync
+// - The Swift bridge guarantees thread-safe callback delivery
+unsafe impl Send for AsyncStartRecording {}
+unsafe impl Sync for AsyncStartRecording {}
 
 impl Future for AsyncStartRecording {
     type Output = Result<(), ReplayKitError>;
@@ -113,6 +136,13 @@ pub struct AsyncStopRecording {
     inner: AsyncCompletionFuture<Option<PreviewViewController>>,
 }
 
+// SAFETY: AsyncStopRecording is Send + Sync because:
+// - AsyncCompletionFuture<Option<PreviewViewController>> is Send + Sync
+// - PreviewViewController wraps an Objective-C object reference, which is thread-safe
+// - The Swift bridge guarantees thread-safe callback delivery
+unsafe impl Send for AsyncStopRecording {}
+unsafe impl Sync for AsyncStopRecording {}
+
 impl Future for AsyncStopRecording {
     type Output = Result<Option<PreviewViewController>, ReplayKitError>;
 
@@ -131,6 +161,13 @@ impl Future for AsyncStopRecording {
 pub struct AsyncStopRecordingWithOutput {
     inner: AsyncCompletionFuture<()>,
 }
+
+// SAFETY: AsyncStopRecordingWithOutput is Send + Sync because:
+// - AsyncCompletionFuture<()> is Send + Sync for Send payloads
+// - The unit type () is Send + Sync
+// - The Swift bridge guarantees thread-safe callback delivery
+unsafe impl Send for AsyncStopRecordingWithOutput {}
+unsafe impl Sync for AsyncStopRecordingWithOutput {}
 
 impl Future for AsyncStopRecordingWithOutput {
     type Output = Result<(), ReplayKitError>;
@@ -151,6 +188,13 @@ pub struct AsyncStartCapture {
     inner: AsyncCompletionFuture<()>,
 }
 
+// SAFETY: AsyncStartCapture is Send + Sync because:
+// - AsyncCompletionFuture<()> is Send + Sync for Send payloads
+// - The unit type () is Send + Sync
+// - The Swift bridge guarantees thread-safe callback delivery
+unsafe impl Send for AsyncStartCapture {}
+unsafe impl Sync for AsyncStartCapture {}
+
 impl Future for AsyncStartCapture {
     type Output = Result<(), ReplayKitError>;
 
@@ -170,6 +214,13 @@ pub struct AsyncStopCapture {
     inner: AsyncCompletionFuture<()>,
 }
 
+// SAFETY: AsyncStopCapture is Send + Sync because:
+// - AsyncCompletionFuture<()> is Send + Sync for Send payloads
+// - The unit type () is Send + Sync
+// - The Swift bridge guarantees thread-safe callback delivery
+unsafe impl Send for AsyncStopCapture {}
+unsafe impl Sync for AsyncStopCapture {}
+
 impl Future for AsyncStopCapture {
     type Output = Result<(), ReplayKitError>;
 
@@ -188,6 +239,13 @@ impl Future for AsyncStopCapture {
 pub struct AsyncDiscardRecording {
     inner: AsyncCompletionFuture<()>,
 }
+
+// SAFETY: AsyncDiscardRecording is Send + Sync because:
+// - AsyncCompletionFuture<()> is Send + Sync for Send payloads
+// - The unit type () is Send + Sync
+// - The Swift bridge guarantees thread-safe callback delivery
+unsafe impl Send for AsyncDiscardRecording {}
+unsafe impl Sync for AsyncDiscardRecording {}
 
 impl Future for AsyncDiscardRecording {
     type Output = Result<(), ReplayKitError>;
@@ -210,6 +268,9 @@ impl AsyncScreenRecorder {
     /// Starts recording asynchronously.
     pub fn start_recording(recorder: &ScreenRecorder) -> AsyncStartRecording {
         let (future, ctx) = AsyncCompletion::create();
+        // SAFETY: recorder.as_ptr() returns a valid RPScreenRecorder pointer. ctx is a valid completion context
+        // from AsyncCompletion::create(). void_callback is a valid extern "C" function. The Swift bridge guarantees
+        // it will call the callback exactly once.
         unsafe {
             crate::ffi::async_api::rk_screen_recorder_start_recording_async(
                 recorder.as_ptr(),
@@ -223,6 +284,9 @@ impl AsyncScreenRecorder {
     /// Stops recording asynchronously, optionally returning a preview controller.
     pub fn stop_recording(recorder: &ScreenRecorder) -> AsyncStopRecording {
         let (future, ctx) = AsyncCompletion::create();
+        // SAFETY: recorder.as_ptr() returns a valid RPScreenRecorder pointer. ctx is a valid completion context
+        // from AsyncCompletion::create(). preview_callback is a valid extern "C" function that handles both
+        // null and non-null result pointers. The Swift bridge guarantees it will call the callback exactly once.
         unsafe {
             crate::ffi::async_api::rk_screen_recorder_stop_recording_async(
                 recorder.as_ptr(),
@@ -239,6 +303,10 @@ impl AsyncScreenRecorder {
         output_path: &std::ffi::CStr,
     ) -> AsyncStopRecordingWithOutput {
         let (future, ctx) = AsyncCompletion::create();
+        // SAFETY: recorder.as_ptr() returns a valid RPScreenRecorder pointer. output_path.as_ptr() is a valid
+        // C string pointer (CStr guarantees valid null-terminated UTF-8). ctx is a valid completion context from
+        // AsyncCompletion::create(). void_callback is a valid extern "C" function. The Swift bridge guarantees
+        // it will call the callback exactly once.
         unsafe {
             crate::ffi::async_api::rk_screen_recorder_stop_recording_with_output_async(
                 recorder.as_ptr(),
@@ -253,6 +321,9 @@ impl AsyncScreenRecorder {
     /// Discards the current recording asynchronously.
     pub fn discard_recording(recorder: &ScreenRecorder) -> AsyncDiscardRecording {
         let (future, ctx) = AsyncCompletion::create();
+        // SAFETY: recorder.as_ptr() returns a valid RPScreenRecorder pointer. ctx is a valid completion context
+        // from AsyncCompletion::create(). void_callback is a valid extern "C" function. The Swift bridge guarantees
+        // it will call the callback exactly once.
         unsafe {
             crate::ffi::async_api::rk_screen_recorder_discard_recording_async(
                 recorder.as_ptr(),

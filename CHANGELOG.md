@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed FFI panic safety: wrapped extern "C" callbacks in `catch_user_panic` to prevent unwinding into Swift
+- Added explicit `SAFETY` comments to all unsafe blocks in `async_api` module explaining pointer validity and lifetime guarantees
+- Added explicit `Send + Sync` trait implementations for async Future types with documentation
+
+
 ## [0.3.0] - 2026-05-17
 
 ### Added

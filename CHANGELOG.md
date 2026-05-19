@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.4] - 2026-05-19
+
+- Bump MSRV from 1.70 to 1.76 to match fleet baseline.
+
 ## [0.3.3] - 2026-05-19
 
 ### Changed

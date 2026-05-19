@@ -1,6 +1,6 @@
 [package]
 name = "replaykit-rs"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/doom-fish/replaykit-rs"
@@ -9,7 +9,7 @@ description = "Safe Rust bindings for Apple's ReplayKit framework — screen rec
 authors = ["Per Johansson <per@doom.fish>"]
 keywords = ["replaykit", "screen-recording", "broadcast", "macos", "apple"]
 categories = ["api-bindings", "os::macos-apis"]
-rust-version = "1.70"
+rust-version = "1.76"
 readme = "README.md"
 build = "build.rs"
 include = [

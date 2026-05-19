@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.3] - 2026-05-19
+
+### Changed
+
+- Documented `RPBroadcastActivityViewControllerDelegate` as an explicit iOS/tvOS-only audit exemption after re-checking `RPBroadcast.h`; the crate continues to expose the macOS-native `RPBroadcastActivityController` flow instead.
+
 ## [0.3.2] - 2026-05-18
 
 - Widen doom-fish-utils version bound to `<0.3` so 0.2.x resolves.

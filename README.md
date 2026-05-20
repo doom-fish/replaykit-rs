@@ -15,7 +15,7 @@ Safe Rust bindings for Apple's **`ReplayKit`** framework on macOS.
 - Broadcast-extension authoring helpers via `BroadcastExtensionContext`, `BroadcastHandler`, `BroadcastSampleHandler`, and `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY`
 - Explicit `NotSupported` wrappers for macOS-unavailable `RPBroadcastActivityViewController`, `RPSystemBroadcastPickerView`, and `RPBroadcastConfiguration`
 - Typed `RPRecordingErrorCode` mapping plus replay/broadcast error domains
-- **Async API** (Tier-1): Executor-agnostic async/await support for recording operations via the `async` feature
+- **Async API**: executor-agnostic futures for recording + broadcast-picker flows, plus bounded async streams for broadcast-controller, preview-controller, detailed recorder, and sample-buffer capture events via the `async` feature
 
 ## Requirements
 
@@ -35,6 +35,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## Async feature
+
+Enable `async` to get:
+
+- `AsyncScreenRecorder::{start_recording, stop_recording, stop_recording_with_output, discard_recording, detailed_events, capture_events}`
+- `AsyncBroadcastActivityControllerHandle::show(...)`
+- `BroadcastControllerEventStream`, `PreviewEventStream`, `DetailedRecordingEventStream`, and `SampleBufferCaptureEventStream`
+
+`SampleBufferCaptureEventStream::start(...)` keeps `ReplayKit`'s existing typed capture bridge for setup, then hands sample events to an executor-agnostic bounded async stream.
 
 ## Platform notes
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0] - 2026-05-20
+
+### Added
+
+- `AsyncBroadcastActivityControllerHandle::show(...)` plus bounded async streams for `BroadcastController`, `PreviewViewController`, typed `ScreenRecorder` delegate events, and sample-buffer capture events.
+- `AsyncScreenRecorder::detailed_events(...)` and `AsyncScreenRecorder::capture_events(...)` so delegate-driven ReplayKit flows can be consumed without blocking the async caller.
+
+### Notes
+
+- Phase 32 completeness + async sweep.
+
 ## [0.3.5] - 2026-05-20
 
 - Widen `doom-fish-utils` dependency bound to `<0.4` so the 0.3.x SPSC-ring release resolves cleanly. No source changes.

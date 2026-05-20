@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use core::ffi::c_char;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::path::Path;
 
 use serde::de::DeserializeOwned;
@@ -43,12 +43,7 @@ pub fn json_cstring<T: Serialize + ?Sized>(
 /// # Safety
 /// `ptr` must be a valid, NUL-terminated C string allocated via `rk_string_free`-compatible means.
 pub unsafe fn take_string(ptr: *mut c_char) -> Option<String> {
-    if ptr.is_null() {
-        return None;
-    }
-    let string = CStr::from_ptr(ptr).to_string_lossy().into_owned();
-    ffi::rk_string_free(ptr);
-    Some(string)
+    doom_fish_utils::ffi_string::take_owned_cstring_c(ptr, |p| ffi::rk_string_free(p))
 }
 
 pub unsafe fn parse_json_ptr<T: DeserializeOwned>(

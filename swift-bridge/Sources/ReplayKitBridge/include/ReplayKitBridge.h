@@ -1,3 +1,0 @@
-#ifndef REPLAYKIT_BRIDGE_H
-#define REPLAYKIT_BRIDGE_H
-#endif

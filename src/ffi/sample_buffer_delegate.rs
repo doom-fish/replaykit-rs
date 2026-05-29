@@ -6,6 +6,8 @@ extern "C" {
         ptr: *mut c_void,
         callback: unsafe extern "C" fn(*mut c_void, i32, *mut c_char),
         refcon: *mut c_void,
+        context_retain: extern "C" fn(*mut c_void),
+        context_release: extern "C" fn(*mut c_void),
         out_error: *mut *mut c_char,
     ) -> i32;
     pub fn rk_screen_recorder_stop_capture(ptr: *mut c_void, out_error: *mut *mut c_char) -> i32;

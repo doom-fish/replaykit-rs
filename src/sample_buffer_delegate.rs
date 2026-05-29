@@ -5,7 +5,10 @@ use serde::Deserialize;
 
 use crate::error::ReplayKitError;
 use crate::ffi;
-use crate::private::{parse_json_ptr, result_from_status, take_string};
+use crate::private::{
+    context_release_cb, context_retain_cb, parse_json_ptr, result_from_status, take_string,
+    CallbackBox,
+};
 use crate::screen_recorder::ScreenRecorder;
 
 /// `ReplayKit` sample-buffer kinds emitted by `startCaptureWithHandler`.
@@ -115,7 +118,7 @@ where
 /// RAII guard for an active `ReplayKit` sample-buffer capture session.
 pub struct SampleBufferCaptureSession {
     recorder_ptr: *mut c_void,
-    refcon: *mut c_void,
+    context: *mut CallbackBox<dyn SampleBufferDelegate>,
     stopped: bool,
 }
 
@@ -143,13 +146,13 @@ impl SampleBufferCaptureSession {
     }
 
     fn free_delegate(&mut self) {
-        if !self.refcon.is_null() {
-            unsafe {
-                drop(Box::from_raw(
-                    self.refcon.cast::<Box<dyn SampleBufferDelegate>>(),
-                ));
-            }
-            self.refcon = ptr::null_mut();
+        if !self.context.is_null() {
+            // Release this session's reference. The Swift capture closure holds
+            // its own +1 reference until ReplayKit invokes the completion
+            // handler, so the delegate is freed only once no capture callback
+            // can still run on the capture queue.
+            unsafe { CallbackBox::release(self.context) };
+            self.context = ptr::null_mut();
         }
     }
 }
@@ -176,7 +179,6 @@ unsafe extern "C" fn sample_capture_trampoline(
     event_kind: i32,
     payload: *mut c_char,
 ) {
-    let delegate = &*(refcon.cast::<Box<dyn SampleBufferDelegate>>());
     let event = match event_kind {
         1 => unsafe {
             parse_json_ptr::<CaptureSamplePayload>(payload, "capture sample event")
@@ -195,7 +197,11 @@ unsafe extern "C" fn sample_capture_trampoline(
             CaptureEvent::Error(ReplayKitError::Unknown(message))
         }
     };
-    delegate.handle_event(event);
+    let delegate = unsafe { CallbackBox::<dyn SampleBufferDelegate>::handler(refcon.cast()) };
+    doom_fish_utils::panic_safe::catch_user_panic(
+        "replaykit::sample_buffer_delegate::sample_capture_trampoline",
+        || delegate.handle_event(event),
+    );
 }
 
 impl ScreenRecorder {
@@ -208,28 +214,27 @@ impl ScreenRecorder {
         D: SampleBufferDelegate,
     {
         let boxed: Box<dyn SampleBufferDelegate> = Box::new(delegate);
-        let refcon = Box::into_raw(Box::new(boxed)).cast::<c_void>();
+        let context = CallbackBox::into_raw(boxed);
+        let refcon = context.cast::<c_void>();
         let mut err: *mut c_char = ptr::null_mut();
         let rc = unsafe {
             ffi::rk_screen_recorder_start_capture(
                 self.as_ptr(),
                 sample_capture_trampoline,
                 refcon,
+                context_retain_cb::<dyn SampleBufferDelegate>,
+                context_release_cb::<dyn SampleBufferDelegate>,
                 &raw mut err,
             )
         };
         if rc == crate::ffi::status::OK {
             Ok(SampleBufferCaptureSession {
                 recorder_ptr: self.as_ptr(),
-                refcon,
+                context,
                 stopped: false,
             })
         } else {
-            unsafe {
-                drop(Box::from_raw(
-                    refcon.cast::<Box<dyn SampleBufferDelegate>>(),
-                ));
-            }
+            unsafe { CallbackBox::release(context) };
             Err(unsafe { crate::private::error_from_status(rc, err) })
         }
     }

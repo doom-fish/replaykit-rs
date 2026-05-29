@@ -42,6 +42,30 @@ public func rk_sample_buffer_delegate_is_supported() -> Bool {
     return false
 }
 
+/// Owns a +1 reference on the Rust `CallbackBox` for as long as the
+/// `startCapture` sample-handler closure is alive. ReplayKit retains the
+/// sample handler until `stopCapture` completes, so this holder's `deinit` —
+/// and the matching `contextRelease` — only runs once no capture callback can
+/// still be dispatched on the capture queue.
+private final class RKSampleBufferContextHolder {
+    let refcon: UnsafeMutableRawPointer?
+    let contextRelease: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?
+
+    init(
+        refcon: UnsafeMutableRawPointer?,
+        contextRetain: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?,
+        contextRelease: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?
+    ) {
+        self.refcon = refcon
+        self.contextRelease = contextRelease
+        contextRetain?(refcon)
+    }
+
+    deinit {
+        contextRelease?(refcon)
+    }
+}
+
 @_cdecl("rk_screen_recorder_start_capture")
 public func rk_screen_recorder_start_capture(
     _ ptr: UnsafeMutableRawPointer,
@@ -51,27 +75,39 @@ public func rk_screen_recorder_start_capture(
         UnsafeMutablePointer<CChar>?
     ) -> Void,
     _ refcon: UnsafeMutableRawPointer?,
+    _ contextRetain: @convention(c) (UnsafeMutableRawPointer?) -> Void,
+    _ contextRelease: @convention(c) (UnsafeMutableRawPointer?) -> Void,
     _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
 ) -> Int32 {
     let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
+    let contextHolder = RKSampleBufferContextHolder(
+        refcon: refcon,
+        contextRetain: contextRetain,
+        contextRelease: contextRelease
+    )
     return rkBlockOnAsync(
         work: {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 recorder.startCapture { sampleBuffer, bufferType, error in
-                    if let error {
-                        callback(refcon, RKSampleBufferErrorEvent, rkOwnedErrorCString(error))
-                        return
+                    // Capture `contextHolder` strongly so the Rust CallbackBox
+                    // outlives every sample callback dispatched on the capture
+                    // queue; it is released when ReplayKit frees this closure.
+                    withExtendedLifetime(contextHolder) {
+                        if let error {
+                            callback(refcon, RKSampleBufferErrorEvent, rkOwnedErrorCString(error))
+                            return
+                        }
+                        let payload = RKSampleBufferPayload(
+                            bufferType: bufferType.rawValue,
+                            numSamples: CMSampleBufferGetNumSamples(sampleBuffer),
+                            dataIsReady: CMSampleBufferDataIsReady(sampleBuffer),
+                            presentationTimeSeconds: rkTimeSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)),
+                            durationSeconds: rkTimeSeconds(CMSampleBufferGetDuration(sampleBuffer)),
+                            videoOrientation: rkSampleBufferOrientation(sampleBuffer)
+                        )
+                        let json = (try? rkEncodeJSON(payload)) ?? "{}"
+                        callback(refcon, RKSampleBufferEvent, rkCString(json))
                     }
-                    let payload = RKSampleBufferPayload(
-                        bufferType: bufferType.rawValue,
-                        numSamples: CMSampleBufferGetNumSamples(sampleBuffer),
-                        dataIsReady: CMSampleBufferDataIsReady(sampleBuffer),
-                        presentationTimeSeconds: rkTimeSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)),
-                        durationSeconds: rkTimeSeconds(CMSampleBufferGetDuration(sampleBuffer)),
-                        videoOrientation: rkSampleBufferOrientation(sampleBuffer)
-                    )
-                    let json = (try? rkEncodeJSON(payload)) ?? "{}"
-                    callback(refcon, RKSampleBufferEvent, rkCString(json))
                 } completionHandler: { error in
                     if let error {
                         continuation.resume(throwing: error)

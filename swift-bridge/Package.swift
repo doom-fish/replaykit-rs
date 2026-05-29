@@ -15,7 +15,6 @@ let package = Package(
     targets: [
         .target(
             name: "ReplayKitBridge",
-            path: "Sources/ReplayKitBridge",
-            publicHeadersPath: "include")
+            path: "Sources/ReplayKitBridge")
     ]
 )

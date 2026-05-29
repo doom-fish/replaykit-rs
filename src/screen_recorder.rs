@@ -368,7 +368,11 @@ fn parse_event(json_ptr: *const c_char) -> RecordingEvent {
 
 unsafe extern "C" fn delegate_trampoline(refcon: *mut c_void, event_json: *const c_char) {
     let handler = &*(refcon.cast::<Box<dyn Fn(RecordingEvent) + Send + 'static>>());
-    handler(parse_event(event_json));
+    let event = parse_event(event_json);
+    doom_fish_utils::panic_safe::catch_user_panic(
+        "replaykit::screen_recorder::delegate_trampoline",
+        || handler(event),
+    );
 }
 
 unsafe extern "C" fn detailed_delegate_trampoline(
@@ -401,7 +405,10 @@ unsafe extern "C" fn detailed_delegate_trampoline(
             ))),
         },
     };
-    handler(event);
+    doom_fish_utils::panic_safe::catch_user_panic(
+        "replaykit::screen_recorder::detailed_delegate_trampoline",
+        || handler(event),
+    );
 }
 
 /// Lightweight retained wrapper around the camera preview `NSView`.

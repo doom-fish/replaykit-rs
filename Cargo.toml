@@ -44,6 +44,9 @@ doom-fish-utils = { path = "../doom-fish-utils", version = ">=0.3.2, <0.4" }
 
 [dev-dependencies]
 pollster = "0.3"
+# Cap bitflags below 2.12: 2.12+ raises its MSRV above this crate's (1.76),
+# which breaks the test build under the fleet baseline toolchain.
+bitflags = ">=2.0, <2.12"
 
 [features]
 default = []

@@ -14,10 +14,24 @@ final class RKBroadcastControllerDelegateHolder: NSObject, RPBroadcastController
 
     let callback: Callback
     let refcon: UnsafeMutableRawPointer?
+    let contextRelease: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?
 
-    init(callback: @escaping Callback, refcon: UnsafeMutableRawPointer?) {
+    init(
+        callback: @escaping Callback,
+        refcon: UnsafeMutableRawPointer?,
+        contextRetain: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?,
+        contextRelease: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?
+    ) {
         self.callback = callback
         self.refcon = refcon
+        self.contextRelease = contextRelease
+        // Take a +1 on the Rust CallbackBox for the lifetime of this holder so
+        // an in-flight delegate callback can never observe a freed handler.
+        contextRetain?(refcon)
+    }
+
+    deinit {
+        contextRelease?(refcon)
     }
 
     func broadcastController(_ broadcastController: RPBroadcastController, didFinishWithError error: Error?) {
@@ -148,10 +162,17 @@ public func rk_broadcast_controller_set_delegate(
         Int32,
         UnsafeMutablePointer<CChar>?
     ) -> Void,
-    _ refcon: UnsafeMutableRawPointer?
+    _ refcon: UnsafeMutableRawPointer?,
+    _ contextRetain: @convention(c) (UnsafeMutableRawPointer?) -> Void,
+    _ contextRelease: @convention(c) (UnsafeMutableRawPointer?) -> Void
 ) -> UnsafeMutableRawPointer {
     let controller = rk_borrow(controllerPtr, as: RPBroadcastController.self)
-    let holder = RKBroadcastControllerDelegateHolder(callback: callback, refcon: refcon)
+    let holder = RKBroadcastControllerDelegateHolder(
+        callback: callback,
+        refcon: refcon,
+        contextRetain: contextRetain,
+        contextRelease: contextRelease
+    )
     controller.delegate = holder
     return rk_retain(holder)
 }

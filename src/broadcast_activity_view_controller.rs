@@ -74,7 +74,10 @@ unsafe extern "C" fn show_trampoline(
         let message = take_string(error_json).unwrap_or_else(|| "unknown error".into());
         Err(crate::error::from_message(&message))
     };
-    (*boxed)(result);
+    doom_fish_utils::panic_safe::catch_user_panic(
+        "replaykit::broadcast_activity_view_controller::show_trampoline",
+        || (*boxed)(result),
+    );
 }
 
 /// Explicit macOS wrapper for the iOS-only `RPBroadcastActivityViewController` area.

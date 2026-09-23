@@ -1,9 +1,8 @@
 #![allow(dead_code)]
 
-use core::ffi::{c_char, c_void};
+use core::ffi::c_char;
 use std::ffi::CString;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -71,82 +70,6 @@ pub fn result_from_status(status: i32, err_msg: *mut c_char) -> Result<(), Repla
     } else {
         Err(unsafe { error_from_status(status, err_msg) })
     }
-}
-
-/// Reference-counted heap allocation handed across the Swift FFI boundary.
-///
-/// The Rust owner (an RAII observer guard or capture session) holds the
-/// initial reference. Each Swift delegate/handler object takes an additional
-/// reference in its `init` (via [`context_retain_cb`]) and drops it in its
-/// `deinit` (via [`context_release_cb`]). The inner `handler` — and therefore
-/// the heap allocation — is freed only once every holder has released its
-/// reference, so an in-flight callback dispatched on another queue can never
-/// observe a freed handler. This mirrors the `StreamContext` refcount pattern
-/// used in screencapturekit-rs.
-pub struct CallbackBox<T: ?Sized> {
-    handler: Box<T>,
-    ref_count: AtomicUsize,
-}
-
-impl<T: ?Sized> CallbackBox<T> {
-    /// Allocates a new context with a reference count of 1 and returns the
-    /// raw pointer to hand across FFI.
-    pub fn into_raw(handler: Box<T>) -> *mut Self {
-        Box::into_raw(Box::new(Self {
-            handler,
-            ref_count: AtomicUsize::new(1),
-        }))
-    }
-
-    /// Borrows the inner handler.
-    ///
-    /// # Safety
-    /// `ptr` must point to a live `CallbackBox<T>` whose reference count is
-    /// held for the duration of the returned borrow.
-    pub unsafe fn handler<'a>(ptr: *mut Self) -> &'a T {
-        &(*ptr).handler
-    }
-
-    /// Increments the reference count.
-    ///
-    /// # Safety
-    /// `ptr` must be null or point to a live `CallbackBox<T>`.
-    pub unsafe fn retain(ptr: *mut Self) {
-        if ptr.is_null() {
-            return;
-        }
-        (*ptr).ref_count.fetch_add(1, Ordering::Relaxed);
-    }
-
-    /// Decrements the reference count, freeing the allocation when it reaches
-    /// zero.
-    ///
-    /// # Safety
-    /// `ptr` must be null or point to a live `CallbackBox<T>`. After the call
-    /// `ptr` must not be used if the allocation was freed.
-    pub unsafe fn release(ptr: *mut Self) {
-        if ptr.is_null() {
-            return;
-        }
-        if (*ptr).ref_count.fetch_sub(1, Ordering::Release) == 1 {
-            // Acquire fence pairs with the Release stores from other threads'
-            // `fetch_sub` calls — the canonical Arc-style refcount drop.
-            std::sync::atomic::fence(Ordering::Acquire);
-            drop(Box::from_raw(ptr));
-        }
-    }
-}
-
-/// C trampoline handed to Swift so a delegate/handler object can take a +1
-/// reference on the [`CallbackBox`] for the duration of its own lifetime.
-pub extern "C" fn context_retain_cb<T: ?Sized>(context: *mut c_void) {
-    unsafe { CallbackBox::<T>::retain(context.cast::<CallbackBox<T>>()) };
-}
-
-/// C trampoline handed to Swift, invoked from a delegate/handler object's
-/// `deinit` to drop the reference taken in [`context_retain_cb`].
-pub extern "C" fn context_release_cb<T: ?Sized>(context: *mut c_void) {
-    unsafe { CallbackBox::<T>::release(context.cast::<CallbackBox<T>>()) };
 }
 
 #[cfg(test)]

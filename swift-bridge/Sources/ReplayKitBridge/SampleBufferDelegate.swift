@@ -5,22 +5,15 @@ import ReplayKit
 private let RKSampleBufferEvent: Int32 = 1
 private let RKSampleBufferErrorEvent: Int32 = 2
 
-struct RKSampleBufferPayload: Encodable {
-    let bufferType: Int
-    let numSamples: Int
-    let dataIsReady: Bool
-    let presentationTimeSeconds: Double?
-    let durationSeconds: Double?
-    let videoOrientation: UInt32?
-}
-
-private func rkTimeSeconds(_ time: CMTime) -> Double? {
-    guard time.isValid, !time.isIndefinite else {
-        return nil
-    }
-    let seconds = CMTimeGetSeconds(time)
-    return seconds.isFinite ? seconds : nil
-}
+public typealias RKCaptureCallback = @convention(c) (
+    UnsafeMutableRawPointer?,
+    Int32,
+    Int32,
+    UnsafeMutableRawPointer?,
+    Bool,
+    UInt32,
+    UnsafeMutablePointer<CChar>?
+) -> Void
 
 private func rkSampleBufferOrientation(_ sampleBuffer: CMSampleBuffer) -> UInt32? {
     guard let attachment = CMGetAttachment(
@@ -42,41 +35,37 @@ public func rk_sample_buffer_delegate_is_supported() -> Bool {
     return false
 }
 
-/// Owns a +1 reference on the Rust `CallbackBox` for as long as the
+/// Owns a +1 reference on the Rust `CallbackContext` for as long as the
 /// `startCapture` sample-handler closure is alive. ReplayKit retains the
 /// sample handler until `stopCapture` completes, so this holder's `deinit` —
 /// and the matching `contextRelease` — only runs once no capture callback can
 /// still be dispatched on the capture queue.
 private final class RKSampleBufferContextHolder {
     let refcon: UnsafeMutableRawPointer?
-    let contextRelease: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?
+    let contextRelease: RKContextCallback
 
     init(
         refcon: UnsafeMutableRawPointer?,
-        contextRetain: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?,
-        contextRelease: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?
+        contextRetain: RKContextCallback,
+        contextRelease: @escaping RKContextCallback
     ) {
         self.refcon = refcon
         self.contextRelease = contextRelease
-        contextRetain?(refcon)
+        contextRetain(refcon)
     }
 
     deinit {
-        contextRelease?(refcon)
+        contextRelease(refcon)
     }
 }
 
 @_cdecl("rk_screen_recorder_start_capture")
 public func rk_screen_recorder_start_capture(
     _ ptr: UnsafeMutableRawPointer,
-    _ callback: @convention(c) (
-        UnsafeMutableRawPointer?,
-        Int32,
-        UnsafeMutablePointer<CChar>?
-    ) -> Void,
+    _ callback: RKCaptureCallback,
     _ refcon: UnsafeMutableRawPointer?,
-    _ contextRetain: @convention(c) (UnsafeMutableRawPointer?) -> Void,
-    _ contextRelease: @convention(c) (UnsafeMutableRawPointer?) -> Void,
+    _ contextRetain: RKContextCallback,
+    _ contextRelease: RKContextCallback,
     _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
 ) -> Int32 {
     let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
@@ -89,24 +78,24 @@ public func rk_screen_recorder_start_capture(
         work: {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 recorder.startCapture { sampleBuffer, bufferType, error in
-                    // Capture `contextHolder` strongly so the Rust CallbackBox
+                    // Capture `contextHolder` strongly so the Rust CallbackContext
                     // outlives every sample callback dispatched on the capture
                     // queue; it is released when ReplayKit frees this closure.
                     withExtendedLifetime(contextHolder) {
                         if let error {
-                            callback(refcon, RKSampleBufferErrorEvent, rkOwnedErrorCString(error))
+                            callback(refcon, RKSampleBufferErrorEvent, 0, nil, false, 0, rkOwnedErrorCString(error))
                             return
                         }
-                        let payload = RKSampleBufferPayload(
-                            bufferType: bufferType.rawValue,
-                            numSamples: CMSampleBufferGetNumSamples(sampleBuffer),
-                            dataIsReady: CMSampleBufferDataIsReady(sampleBuffer),
-                            presentationTimeSeconds: rkTimeSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)),
-                            durationSeconds: rkTimeSeconds(CMSampleBufferGetDuration(sampleBuffer)),
-                            videoOrientation: rkSampleBufferOrientation(sampleBuffer)
+                        let orientation = rkSampleBufferOrientation(sampleBuffer)
+                        callback(
+                            refcon,
+                            RKSampleBufferEvent,
+                            Int32(clamping: bufferType.rawValue),
+                            Unmanaged.passRetained(sampleBuffer).toOpaque(),
+                            orientation != nil,
+                            orientation ?? 0,
+                            nil
                         )
-                        let json = (try? rkEncodeJSON(payload)) ?? "{}"
-                        callback(refcon, RKSampleBufferEvent, rkCString(json))
                     }
                 } completionHandler: { error in
                     if let error {

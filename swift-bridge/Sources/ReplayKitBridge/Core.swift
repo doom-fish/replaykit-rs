@@ -40,6 +40,11 @@ func rk_release(_ ptr: UnsafeMutableRawPointer) {
     Unmanaged<AnyObject>.fromOpaque(ptr).release()
 }
 
+@_cdecl("rk_object_retain")
+public func rk_object_retain(_ ptr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer {
+    Unmanaged<AnyObject>.fromOpaque(ptr).retain().toOpaque()
+}
+
 @_cdecl("rk_object_release")
 public func rk_object_release(_ ptr: UnsafeMutableRawPointer) {
     rk_release(ptr)

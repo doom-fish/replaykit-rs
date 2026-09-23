@@ -139,6 +139,12 @@ impl ScreenRecorder {
         self.ptr
     }
 
+    pub(crate) fn retained(&self) -> Self {
+        Self {
+            ptr: unsafe { ffi::rk_object_retain(self.ptr) },
+        }
+    }
+
     /// Returns a structured snapshot of the current recorder state.
     pub fn state(&self) -> Result<ScreenRecorderState, ReplayKitError> {
         let ptr = unsafe { ffi::rk_screen_recorder_state_json(self.ptr) };

@@ -16,94 +16,62 @@ fn run_async_case(name: &str, body: impl FnOnce() + Send + 'static) {
         let _ = tx.send(result);
     });
 
-    match rx.recv_timeout(Duration::from_secs(5)) {
+    match rx.recv_timeout(Duration::from_secs(90)) {
         Ok(Ok(())) => {}
         Ok(Err(payload)) => panic::resume_unwind(payload),
         Err(RecvTimeoutError::Timeout) => {
-            eprintln!("Skipping {name}: ReplayKit callbacks did not complete in time");
+            panic!("{name}: ReplayKit callbacks did not complete in time");
         }
         Err(RecvTimeoutError::Disconnected) => panic!("{name} worker thread disconnected"),
     }
 }
 
 #[test]
+#[ignore = "starts a screen recording, which requires screen-recording consent"]
 fn test_start_recording_happy_path() {
     run_async_case("test_start_recording_happy_path", || {
         pollster::block_on(async {
-            let Some(recorder) = ScreenRecorder::shared() else {
-                println!("ReplayKit unavailable, skipping test");
-                return;
-            };
+            let recorder = ScreenRecorder::shared().expect("shared recorder");
+            assert!(recorder.is_available(), "ReplayKit is unavailable");
 
-            if !recorder.is_available() {
-                println!("ReplayKit not available on this system, skipping test");
-                return;
-            }
-
-            // Test starting recording
-            if AsyncScreenRecorder::start_recording(&recorder).await == Ok(()) {
-                println!("✓ start_recording succeeded");
-                // Clean up by stopping
-                let _ = AsyncScreenRecorder::stop_recording(&recorder).await;
-            } else {
-                panic!("start_recording failed");
-            }
+            assert_eq!(AsyncScreenRecorder::start_recording(&recorder).await, Ok(()));
+            assert!(recorder.is_recording());
+            assert!(AsyncScreenRecorder::stop_recording(&recorder).await.is_ok());
         });
     });
 }
 
 #[test]
+#[ignore = "starts a screen recording, which requires screen-recording consent"]
 fn test_stop_recording_happy_path() {
     run_async_case("test_stop_recording_happy_path", || {
         pollster::block_on(async {
-            let Some(recorder) = ScreenRecorder::shared() else {
-                println!("ReplayKit unavailable, skipping test");
-                return;
-            };
+            let recorder = ScreenRecorder::shared().expect("shared recorder");
+            assert!(recorder.is_available(), "ReplayKit is unavailable");
 
-            if !recorder.is_available() {
-                println!("ReplayKit not available on this system, skipping test");
-                return;
-            }
-
-            // Start recording first
-            if AsyncScreenRecorder::start_recording(&recorder)
+            assert_eq!(AsyncScreenRecorder::start_recording(&recorder).await, Ok(()));
+            let preview = AsyncScreenRecorder::stop_recording(&recorder)
                 .await
-                .is_err()
-            {
-                println!("Could not start recording, skipping stop test");
-                return;
-            }
-
-            // Test stopping recording
-            if let Ok(preview) = AsyncScreenRecorder::stop_recording(&recorder).await {
-                println!("✓ stop_recording succeeded, preview: {}", preview.is_some());
-            } else {
-                panic!("stop_recording failed");
+                .expect("stop_recording failed");
+            assert!(!recorder.is_recording());
+            if let Some(preview) = preview {
+                assert_eq!(preview.class_name(), "RPPreviewViewController");
             }
         });
     });
 }
 
 #[test]
-fn test_discard_recording_error_path() {
-    run_async_case("test_discard_recording_error_path", || {
+#[ignore = "discarding needs a finished recording, which requires screen-recording consent"]
+fn test_discard_recording_after_stop() {
+    run_async_case("test_discard_recording_after_stop", || {
         pollster::block_on(async {
-            let Some(recorder) = ScreenRecorder::shared() else {
-                println!("ReplayKit unavailable, skipping test");
-                return;
-            };
+            let recorder = ScreenRecorder::shared().expect("shared recorder");
+            assert!(recorder.is_available(), "ReplayKit is unavailable");
 
-            if !recorder.is_available() {
-                println!("ReplayKit not available on this system, skipping test");
-                return;
-            }
-
-            // Test discard when not recording (should error)
-            match AsyncScreenRecorder::discard_recording(&recorder).await {
-                Ok(()) => println!("✓ discard_recording succeeded"),
-                Err(e) => println!("✓ discard_recording failed as expected: {e}"),
-            }
+            assert_eq!(AsyncScreenRecorder::start_recording(&recorder).await, Ok(()));
+            assert!(AsyncScreenRecorder::stop_recording(&recorder).await.is_ok());
+            assert_eq!(AsyncScreenRecorder::discard_recording(&recorder).await, Ok(()));
         });
     });
 }

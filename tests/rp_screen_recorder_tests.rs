@@ -27,5 +27,8 @@ fn shared_recorder_exposes_consistent_state() {
 fn start_recording_requires_user_interaction() {
     let recorder =
         ScreenRecorder::shared().expect("RPScreenRecorder.shared() should exist on macOS");
-    let _ = recorder.start_recording();
+    assert_eq!(recorder.start_recording(), Ok(()));
+    assert!(recorder.is_recording());
+    assert_eq!(recorder.stop_recording(), Ok(()));
+    assert!(!recorder.is_recording());
 }

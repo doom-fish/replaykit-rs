@@ -244,43 +244,6 @@ func rkDictionaryFromJSON(
 
 // MARK: - Semaphore / Task helpers
 
-func rkBlockOnMainActorAsync<T>(
-    timeoutSeconds: Int = 30,
-    work: @escaping @MainActor () async throws -> T,
-    onSuccess: @escaping (T) -> Void,
-    onError: @escaping (Error) -> Void
-) -> Int32 {
-    let semaphore = DispatchSemaphore(value: 0)
-    var result: Result<T, Error>?
-
-    Task { @MainActor in
-        do {
-            result = .success(try await work())
-        } catch {
-            result = .failure(error)
-        }
-        semaphore.signal()
-    }
-
-    guard semaphore.wait(timeout: .now() + .seconds(timeoutSeconds)) == .success else {
-        onError(RKBridgeError.timedOut("ReplayKit operation timed out after \(timeoutSeconds) seconds"))
-        return RK_TIMED_OUT
-    }
-
-    switch result {
-    case .success(let value):
-        onSuccess(value)
-        return RK_OK
-    case .failure(let error):
-        onError(error)
-        return rkStatus(for: error)
-    case .none:
-        let err = RKBridgeError.unknown("ReplayKit operation completed without a result")
-        onError(err)
-        return err.statusCode
-    }
-}
-
 func rkBlockOnAsync<T>(
     timeoutSeconds: Int = 30,
     work: @escaping () async throws -> T,

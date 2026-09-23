@@ -228,50 +228,6 @@ impl Future for AsyncStopRecordingWithOutput {
     }
 }
 
-/// Internal future type reserved for future capture-start wrappers.
-#[doc(hidden)]
-pub struct AsyncStartCapture {
-    inner: AsyncCompletionFuture<()>,
-}
-
-// SAFETY: `AsyncStartCapture` wraps an `AsyncCompletionFuture<()>`, which is safe
-// to move between threads.
-unsafe impl Send for AsyncStartCapture {}
-// SAFETY: see `Send` above.
-unsafe impl Sync for AsyncStartCapture {}
-
-impl Future for AsyncStartCapture {
-    type Output = Result<(), ReplayKitError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.inner)
-            .poll(cx)
-            .map(|result| result.map_err(ReplayKitError::Unknown))
-    }
-}
-
-/// Internal future type reserved for future capture-stop wrappers.
-#[doc(hidden)]
-pub struct AsyncStopCapture {
-    inner: AsyncCompletionFuture<()>,
-}
-
-// SAFETY: `AsyncStopCapture` wraps an `AsyncCompletionFuture<()>`, which is safe
-// to move between threads.
-unsafe impl Send for AsyncStopCapture {}
-// SAFETY: see `Send` above.
-unsafe impl Sync for AsyncStopCapture {}
-
-impl Future for AsyncStopCapture {
-    type Output = Result<(), ReplayKitError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.inner)
-            .poll(cx)
-            .map(|result| result.map_err(ReplayKitError::Unknown))
-    }
-}
-
 /// Future for async discard recording operation.
 pub struct AsyncDiscardRecording {
     inner: AsyncCompletionFuture<()>,

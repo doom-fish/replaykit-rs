@@ -75,67 +75,6 @@ public func rk_screen_recorder_stop_recording_with_output_async(
     }
 }
 
-// MARK: - startCapture async (returns completion for start, callback for samples)
-
-@_cdecl("rk_screen_recorder_start_capture_async")
-public func rk_screen_recorder_start_capture_async(
-    _ ptr: UnsafeMutableRawPointer,
-    _ sampleCallback: @escaping @convention(c) (
-        UnsafeMutableRawPointer?,
-        Int32,
-        UnsafePointer<CChar>?
-    ) -> Void,
-    _ sampleCtx: UnsafeMutableRawPointer?,
-    _ cb: @escaping RKAsyncCompletion,
-    _ ctx: UnsafeMutableRawPointer
-) {
-    let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
-    recorder.startCapture(
-        handler: { sampleBuffer, bufferType, error in
-            if let error {
-                let desc = error.localizedDescription
-                desc.withCString { sampleCallback(sampleCtx, 2, $0) }
-                return
-            }
-            let payload = RKSampleBufferPayload(
-                bufferType: bufferType.rawValue,
-                numSamples: CMSampleBufferGetNumSamples(sampleBuffer),
-                dataIsReady: CMSampleBufferDataIsReady(sampleBuffer),
-                presentationTimeSeconds: rkTimeSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)),
-                durationSeconds: rkTimeSeconds(CMSampleBufferGetDuration(sampleBuffer)),
-                videoOrientation: rkSampleBufferOrientation(sampleBuffer)
-            )
-            let json = (try? rkEncodeJSON(payload)) ?? "{}"
-            json.withCString { sampleCallback(sampleCtx, 1, $0) }
-        },
-        completionHandler: { error in
-            if let error {
-                error.localizedDescription.withCString { cb(nil, $0, ctx) }
-            } else {
-                cb(nil, nil, ctx)
-            }
-        }
-    )
-}
-
-// MARK: - stopCapture async
-
-@_cdecl("rk_screen_recorder_stop_capture_async")
-public func rk_screen_recorder_stop_capture_async(
-    _ ptr: UnsafeMutableRawPointer,
-    _ cb: @escaping RKAsyncCompletion,
-    _ ctx: UnsafeMutableRawPointer
-) {
-    let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
-    recorder.stopCapture { error in
-        if let error {
-            error.localizedDescription.withCString { cb(nil, $0, ctx) }
-        } else {
-            cb(nil, nil, ctx)
-        }
-    }
-}
-
 // MARK: - discard recording async
 
 @_cdecl("rk_screen_recorder_discard_recording_async")
@@ -148,26 +87,4 @@ public func rk_screen_recorder_discard_recording_async(
     recorder.discardRecording {
         cb(nil, nil, ctx)
     }
-}
-
-// MARK: - Helper to get localizedDescription from Error
-
-private func rkTimeSeconds(_ time: CMTime) -> Double? {
-    guard time.isValid, !time.isIndefinite else {
-        return nil
-    }
-    let seconds = CMTimeGetSeconds(time)
-    return seconds.isFinite ? seconds : nil
-}
-
-private func rkSampleBufferOrientation(_ sampleBuffer: CMSampleBuffer) -> UInt32? {
-    guard let attachment = CMGetAttachment(
-        sampleBuffer,
-        key: RPVideoSampleOrientationKey as CFString,
-        attachmentModeOut: nil
-    ) else {
-        return nil
-    }
-    guard let number = attachment as? NSNumber else { return nil }
-    return number.uint32Value
 }

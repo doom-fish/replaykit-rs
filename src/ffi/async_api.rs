@@ -23,22 +23,6 @@ extern "C" {
         ctx: *mut c_void,
     );
 
-    /// Async start capture - with sample callback and completion callback
-    pub fn rk_screen_recorder_start_capture_async(
-        ptr: *mut c_void,
-        sample_cb: unsafe extern "C" fn(*mut c_void, i32, *const c_char),
-        sample_ctx: *mut c_void,
-        cb: unsafe extern "C" fn(*const c_void, *const i8, *mut c_void),
-        ctx: *mut c_void,
-    );
-
-    /// Async stop capture
-    pub fn rk_screen_recorder_stop_capture_async(
-        ptr: *mut c_void,
-        cb: unsafe extern "C" fn(*const c_void, *const i8, *mut c_void),
-        ctx: *mut c_void,
-    );
-
     /// Async discard recording
     pub fn rk_screen_recorder_discard_recording_async(
         ptr: *mut c_void,

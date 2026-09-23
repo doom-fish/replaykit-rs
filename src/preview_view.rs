@@ -1,9 +1,13 @@
 use core::ffi::{c_char, c_void};
+use std::marker::PhantomData;
+use std::ptr;
+use std::rc::Rc;
 
 use doom_fish_utils::callback_context::CallbackContext;
 
+use crate::error::ReplayKitError;
 use crate::ffi;
-use crate::private::{parse_json_ptr, take_string};
+use crate::private::{parse_json_ptr, result_from_status, take_string};
 
 type PreviewHandler = Box<dyn Fn(PreviewEvent) + Send + Sync>;
 
@@ -16,22 +20,65 @@ pub enum PreviewEvent {
     DidFinishWithActivityTypes(Vec<String>),
 }
 
-/// Safe wrapper around `RPPreviewViewController`.
-pub struct PreviewViewController {
-    pub(crate) ptr: *mut c_void,
+pub struct PreviewViewControllerHandle {
+    ptr: *mut c_void,
 }
 
-unsafe impl Send for PreviewViewController {}
-unsafe impl Sync for PreviewViewController {}
+unsafe impl Send for PreviewViewControllerHandle {}
+unsafe impl Sync for PreviewViewControllerHandle {}
+
+impl PreviewViewControllerHandle {
+    pub(crate) unsafe fn from_raw(ptr: *mut c_void) -> Option<Self> {
+        (!ptr.is_null()).then_some(Self { ptr })
+    }
+
+    pub fn class_name(&self) -> String {
+        let ptr = unsafe { ffi::rk_object_class_name(self.ptr) };
+        unsafe { take_string(ptr) }.unwrap_or_else(|| "RPPreviewViewController".into())
+    }
+
+    pub fn to_controller(&self) -> Result<PreviewViewController, ReplayKitError> {
+        let mut controller: *mut c_void = ptr::null_mut();
+        let mut err: *mut c_char = ptr::null_mut();
+        let rc = unsafe {
+            ffi::rk_preview_view_controller_retain_on_main_thread(
+                self.ptr,
+                &raw mut controller,
+                &raw mut err,
+            )
+        };
+        result_from_status(rc, err)?;
+        Ok(PreviewViewController {
+            ptr: controller,
+            _main_thread_only: PhantomData,
+        })
+    }
+}
+
+impl Drop for PreviewViewControllerHandle {
+    fn drop(&mut self) {
+        unsafe { ffi::rk_object_release_on_main_thread(self.ptr) };
+    }
+}
+
+impl std::fmt::Debug for PreviewViewControllerHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreviewViewControllerHandle")
+            .field("class_name", &self.class_name())
+            .finish()
+    }
+}
+
+/// Safe wrapper around `RPPreviewViewController`.
+pub struct PreviewViewController {
+    ptr: *mut c_void,
+    _main_thread_only: PhantomData<Rc<()>>,
+}
 
 impl PreviewViewController {
     /// Whether `RPPreviewViewController` is available on the current platform.
     pub fn is_supported_on_current_platform() -> bool {
         unsafe { ffi::rk_preview_view_controller_is_supported() }
-    }
-
-    pub(crate) const unsafe fn from_ptr(ptr: *mut c_void) -> Self {
-        Self { ptr }
     }
 
     /// Returns the Objective-C class name for the wrapped preview controller.
@@ -41,38 +88,47 @@ impl PreviewViewController {
     }
 
     /// Returns whether the view hierarchy has been loaded.
-    pub fn is_view_loaded(&self) -> bool {
-        unsafe { ffi::rk_preview_view_controller_is_view_loaded(self.ptr) }
+    pub fn is_view_loaded(&self) -> Result<bool, ReplayKitError> {
+        let mut loaded = false;
+        let mut err: *mut c_char = ptr::null_mut();
+        let rc = unsafe {
+            ffi::rk_preview_view_controller_is_view_loaded(self.ptr, &raw mut loaded, &raw mut err)
+        };
+        result_from_status(rc, err).map(|()| loaded)
     }
 
     /// Registers a delegate callback for preview controller events.
-    pub fn observe<F>(&self, handler: F) -> PreviewViewControllerObserver
+    pub fn observe<F>(&self, handler: F) -> Result<PreviewViewControllerObserver, ReplayKitError>
     where
         F: Fn(PreviewEvent) + Send + Sync + 'static,
     {
         let handler: PreviewHandler = Box::new(handler);
         let context = CallbackContext::new(handler);
-        let holder_ptr = unsafe {
+        let mut holder_ptr: *mut c_void = ptr::null_mut();
+        let mut err: *mut c_char = ptr::null_mut();
+        let rc = unsafe {
             ffi::rk_preview_view_controller_set_delegate(
                 self.ptr,
                 preview_trampoline,
                 context.as_ptr(),
                 CallbackContext::<PreviewHandler>::RETAIN,
                 CallbackContext::<PreviewHandler>::RELEASE,
+                &raw mut holder_ptr,
+                &raw mut err,
             )
         };
-        PreviewViewControllerObserver {
+        result_from_status(rc, err)?;
+        Ok(PreviewViewControllerObserver {
             holder_ptr,
             context,
-        }
+            _main_thread_only: PhantomData,
+        })
     }
 }
 
 impl Drop for PreviewViewController {
     fn drop(&mut self) {
-        if !self.ptr.is_null() {
-            unsafe { ffi::rk_object_release(self.ptr) };
-        }
+        unsafe { ffi::rk_object_release_on_main_thread(self.ptr) };
     }
 }
 
@@ -80,7 +136,6 @@ impl std::fmt::Debug for PreviewViewController {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PreviewViewController")
             .field("class_name", &self.class_name())
-            .field("is_view_loaded", &self.is_view_loaded())
             .finish()
     }
 }
@@ -113,10 +168,8 @@ unsafe extern "C" fn preview_trampoline(
 pub struct PreviewViewControllerObserver {
     holder_ptr: *mut c_void,
     context: CallbackContext<PreviewHandler>,
+    _main_thread_only: PhantomData<Rc<()>>,
 }
-
-unsafe impl Send for PreviewViewControllerObserver {}
-unsafe impl Sync for PreviewViewControllerObserver {}
 
 impl Drop for PreviewViewControllerObserver {
     fn drop(&mut self) {

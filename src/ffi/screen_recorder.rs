@@ -12,7 +12,11 @@ extern "C" {
     pub fn rk_screen_recorder_set_camera_enabled(ptr: *mut c_void, enabled: bool);
     pub fn rk_screen_recorder_camera_position(ptr: *mut c_void) -> i32;
     pub fn rk_screen_recorder_set_camera_position(ptr: *mut c_void, camera_position: i32);
-    pub fn rk_screen_recorder_camera_preview_view(ptr: *mut c_void) -> *mut c_void;
+    pub fn rk_screen_recorder_camera_preview_view(
+        ptr: *mut c_void,
+        out_view: *mut *mut c_void,
+        out_error: *mut *mut c_char,
+    ) -> i32;
 
     pub fn rk_screen_recorder_state_json(ptr: *mut c_void) -> *mut c_char;
 
@@ -64,5 +68,9 @@ extern "C" {
     ) -> u64;
     pub fn rk_screen_recorder_remove_observer(token: u64);
 
-    pub fn rk_ns_view_is_hidden(ptr: *mut c_void) -> bool;
+    pub fn rk_ns_view_is_hidden(
+        ptr: *mut c_void,
+        out_hidden: *mut bool,
+        out_error: *mut *mut c_char,
+    ) -> i32;
 }

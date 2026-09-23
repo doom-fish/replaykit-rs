@@ -41,7 +41,9 @@ pub use error::{
     RecordingErrorCode, ReplayKitError, ReplayKitFrameworkError, RP_RECORDING_ERROR_DOMAIN,
     SC_STREAM_ERROR_DOMAIN,
 };
-pub use preview_view::{PreviewEvent, PreviewViewController, PreviewViewControllerObserver};
+pub use preview_view::{
+    PreviewEvent, PreviewViewController, PreviewViewControllerHandle, PreviewViewControllerObserver,
+};
 pub use sample_buffer_delegate::{
     CaptureEvent, CaptureSample, SampleBufferCaptureSession, SampleBufferDelegate, SampleBufferType,
 };
@@ -71,7 +73,8 @@ pub mod prelude {
         SC_STREAM_ERROR_DOMAIN,
     };
     pub use crate::preview_view::{
-        PreviewEvent, PreviewViewController, PreviewViewControllerObserver,
+        PreviewEvent, PreviewViewController, PreviewViewControllerHandle,
+        PreviewViewControllerObserver,
     };
     pub use crate::sample_buffer_delegate::{
         CaptureEvent, CaptureSample, SampleBufferCaptureSession, SampleBufferDelegate,

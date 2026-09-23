@@ -1,13 +1,15 @@
 use core::ffi::{c_char, c_void};
+use std::marker::PhantomData;
 use std::path::Path;
 use std::ptr;
+use std::rc::Rc;
 
 use doom_fish_utils::callback_context::CallbackContext;
 use serde::Deserialize;
 
 use crate::error::ReplayKitError;
 use crate::ffi;
-use crate::preview_view::PreviewViewController;
+use crate::preview_view::PreviewViewControllerHandle;
 use crate::private::{error_from_status, parse_json_ptr, path_cstring, result_from_status};
 
 type RecordingHandler = Box<dyn Fn(RecordingEvent) + Send + Sync>;
@@ -30,7 +32,7 @@ pub enum DetailedRecordingEvent {
     /// Recording stopped and optionally produced a preview controller and/or error.
     DidStopRecording {
         /// Preview controller returned by `ReplayKit` when available.
-        preview_view_controller: Option<PreviewViewController>,
+        preview_view_controller: Option<PreviewViewControllerHandle>,
         /// Framework error returned by `ReplayKit` when available.
         error: Option<ReplayKitError>,
     },
@@ -193,13 +195,17 @@ impl ScreenRecorder {
     }
 
     /// Returns the current camera preview view when camera capture is enabled.
-    pub fn camera_preview_view(&self) -> Option<CameraPreviewView> {
-        let ptr = unsafe { ffi::rk_screen_recorder_camera_preview_view(self.ptr) };
-        if ptr.is_null() {
-            None
-        } else {
-            Some(CameraPreviewView { ptr })
-        }
+    pub fn camera_preview_view(&self) -> Result<Option<CameraPreviewView>, ReplayKitError> {
+        let mut view: *mut c_void = ptr::null_mut();
+        let mut err: *mut c_char = ptr::null_mut();
+        let rc = unsafe {
+            ffi::rk_screen_recorder_camera_preview_view(self.ptr, &raw mut view, &raw mut err)
+        };
+        result_from_status(rc, err)?;
+        Ok((!view.is_null()).then_some(CameraPreviewView {
+            ptr: view,
+            _main_thread_only: PhantomData,
+        }))
     }
 
     /// Starts a recording session.
@@ -217,7 +223,7 @@ impl ScreenRecorder {
     /// Stops the active recording session and returns the preview controller when `ReplayKit` supplies one.
     pub fn stop_recording_with_preview(
         &self,
-    ) -> Result<Option<PreviewViewController>, ReplayKitError> {
+    ) -> Result<Option<PreviewViewControllerHandle>, ReplayKitError> {
         let mut err: *mut c_char = ptr::null_mut();
         let mut preview_ptr: *mut c_void = ptr::null_mut();
         let rc = unsafe {
@@ -227,13 +233,10 @@ impl ScreenRecorder {
                 &raw mut err,
             )
         };
+        let preview = unsafe { PreviewViewControllerHandle::from_raw(preview_ptr) };
         if rc == crate::ffi::status::OK {
-            Ok((!preview_ptr.is_null())
-                .then(|| unsafe { PreviewViewController::from_ptr(preview_ptr) }))
+            Ok(preview)
         } else {
-            if !preview_ptr.is_null() {
-                unsafe { ffi::rk_object_release(preview_ptr) };
-            }
             Err(unsafe { error_from_status(rc, err) })
         }
     }
@@ -394,8 +397,8 @@ unsafe extern "C" fn detailed_trampoline(
     preview_controller_ptr: *mut c_void,
     error_json: *mut c_char,
 ) {
-    let preview_view_controller = (!preview_controller_ptr.is_null())
-        .then(|| unsafe { PreviewViewController::from_ptr(preview_controller_ptr) });
+    let preview_view_controller =
+        unsafe { PreviewViewControllerHandle::from_raw(preview_controller_ptr) };
     let error = if error_json.is_null() {
         None
     } else {
@@ -428,10 +431,8 @@ unsafe extern "C" fn detailed_trampoline(
 /// Lightweight retained wrapper around the camera preview `NSView`.
 pub struct CameraPreviewView {
     ptr: *mut c_void,
+    _main_thread_only: PhantomData<Rc<()>>,
 }
-
-unsafe impl Send for CameraPreviewView {}
-unsafe impl Sync for CameraPreviewView {}
 
 impl CameraPreviewView {
     /// Returns the Objective-C class name for the wrapped preview view.
@@ -441,16 +442,17 @@ impl CameraPreviewView {
     }
 
     /// Returns whether the preview view is hidden.
-    pub fn is_hidden(&self) -> bool {
-        unsafe { ffi::rk_ns_view_is_hidden(self.ptr) }
+    pub fn is_hidden(&self) -> Result<bool, ReplayKitError> {
+        let mut hidden = false;
+        let mut err: *mut c_char = ptr::null_mut();
+        let rc = unsafe { ffi::rk_ns_view_is_hidden(self.ptr, &raw mut hidden, &raw mut err) };
+        result_from_status(rc, err).map(|()| hidden)
     }
 }
 
 impl Drop for CameraPreviewView {
     fn drop(&mut self) {
-        if !self.ptr.is_null() {
-            unsafe { ffi::rk_object_release(self.ptr) };
-        }
+        unsafe { ffi::rk_object_release_on_main_thread(self.ptr) };
     }
 }
 
@@ -458,7 +460,6 @@ impl std::fmt::Debug for CameraPreviewView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CameraPreviewView")
             .field("class_name", &self.class_name())
-            .field("is_hidden", &self.is_hidden())
             .finish()
     }
 }

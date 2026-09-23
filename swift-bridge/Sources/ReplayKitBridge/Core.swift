@@ -7,6 +7,7 @@ let RK_INVALID_ARGUMENT: Int32 = -1
 let RK_TIMED_OUT: Int32 = -2
 let RK_NOT_SUPPORTED: Int32 = -3
 let RK_FRAMEWORK_ERROR: Int32 = -4
+let RK_MAIN_THREAD_REQUIRED: Int32 = -5
 let RK_UNKNOWN: Int32 = -99
 
 // MARK: - C-string helpers
@@ -50,6 +51,20 @@ public func rk_object_release(_ ptr: UnsafeMutableRawPointer) {
     rk_release(ptr)
 }
 
+@_cdecl("rk_object_release_on_main_thread")
+public func rk_object_release_on_main_thread(_ ptr: UnsafeMutableRawPointer) {
+    let object = Unmanaged<AnyObject>.fromOpaque(ptr)
+    rkOnMainThread { object.release() }
+}
+
+func rkOnMainThread(_ body: @escaping () -> Void) {
+    if Thread.isMainThread {
+        body()
+    } else {
+        DispatchQueue.main.async(execute: body)
+    }
+}
+
 @_cdecl("rk_object_class_name")
 public func rk_object_class_name(_ ptr: UnsafeMutableRawPointer) -> UnsafeMutablePointer<CChar>? {
     let object = Unmanaged<AnyObject>.fromOpaque(ptr).takeUnretainedValue()
@@ -62,6 +77,7 @@ enum RKBridgeError: Error, CustomStringConvertible {
     case invalidArgument(String)
     case timedOut(String)
     case notSupported(String)
+    case mainThreadRequired(String)
     case unknown(String)
 
     var statusCode: Int32 {
@@ -69,6 +85,7 @@ enum RKBridgeError: Error, CustomStringConvertible {
         case .invalidArgument: return RK_INVALID_ARGUMENT
         case .timedOut: return RK_TIMED_OUT
         case .notSupported: return RK_NOT_SUPPORTED
+        case .mainThreadRequired: return RK_MAIN_THREAD_REQUIRED
         case .unknown: return RK_UNKNOWN
         }
     }
@@ -78,6 +95,7 @@ enum RKBridgeError: Error, CustomStringConvertible {
         case .invalidArgument(let msg),
              .timedOut(let msg),
              .notSupported(let msg),
+             .mainThreadRequired(let msg),
              .unknown(let msg):
             return msg
         }
@@ -137,6 +155,17 @@ func rkReturnBridgeError(
 ) -> Int32 {
     rkPopulateError(outError, with: error)
     return error.statusCode
+}
+
+func rkRequireMainThread(
+    _ operation: String,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Bool {
+    guard Thread.isMainThread else {
+        rkReturnBridgeError(outError, .mainThreadRequired("\(operation) requires the main thread"))
+        return false
+    }
+    return true
 }
 
 // MARK: - JSON helpers

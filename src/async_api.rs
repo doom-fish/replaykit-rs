@@ -45,7 +45,9 @@ use crate::broadcast_controller::{
 };
 use crate::error::ReplayKitError;
 use crate::ffi;
-use crate::preview_view::{PreviewEvent, PreviewViewController, PreviewViewControllerObserver};
+use crate::preview_view::{
+    PreviewEvent, PreviewViewController, PreviewViewControllerHandle, PreviewViewControllerObserver,
+};
 use crate::private::{cstring_from_str, take_string};
 use crate::sample_buffer_delegate::{CaptureEvent, SampleBufferCaptureSession};
 use crate::screen_recorder::{DetailedRecordingEvent, DetailedRecordingObserver, ScreenRecorder};
@@ -76,25 +78,21 @@ extern "C" fn void_callback(_result: *const c_void, error: *const i8, user_data:
 extern "C" fn preview_callback(result: *const c_void, error: *const i8, user_data: *mut c_void) {
     catch_user_panic("replaykit::async_api::preview_callback", || {
         if error.is_null() {
-            if result.is_null() {
-                // SAFETY: user_data comes from AsyncCompletion::create() and the Swift
-                // bridge calls the completion at most once.
-                unsafe { AsyncCompletion::complete_ok(user_data, None::<PreviewViewController>) };
-            } else {
-                // SAFETY: result is a retained `RPPreviewViewController` supplied by the
-                // Swift bridge for this completion.
-                let preview = unsafe { PreviewViewController::from_ptr(result.cast_mut()) };
-                // SAFETY: user_data comes from AsyncCompletion::create() and the Swift
-                // bridge calls the completion at most once.
-                unsafe { AsyncCompletion::complete_ok(user_data, Some(preview)) };
-            }
+            // SAFETY: a non-null result is a retained `RPPreviewViewController` supplied
+            // by the Swift bridge for this completion.
+            let preview = unsafe { PreviewViewControllerHandle::from_raw(result.cast_mut()) };
+            // SAFETY: user_data comes from AsyncCompletion::create() and the Swift
+            // bridge calls the completion at most once.
+            unsafe { AsyncCompletion::complete_ok(user_data, preview) };
         } else {
             // SAFETY: error is a valid C string supplied by the Swift bridge.
             let message = unsafe { error_from_cstr(error) };
             // SAFETY: user_data comes from AsyncCompletion::create() and the Swift
             // bridge calls the completion at most once.
             unsafe {
-                AsyncCompletion::<Option<PreviewViewController>>::complete_err(user_data, message);
+                AsyncCompletion::<Option<PreviewViewControllerHandle>>::complete_err(
+                    user_data, message,
+                );
             }
         }
     });
@@ -188,17 +186,17 @@ impl Future for AsyncStartRecording {
 
 /// Future for async stop recording operation (optionally returns a preview controller).
 pub struct AsyncStopRecording {
-    inner: AsyncCompletionFuture<Option<PreviewViewController>>,
+    inner: AsyncCompletionFuture<Option<PreviewViewControllerHandle>>,
 }
 
 // SAFETY: `AsyncStopRecording` wraps an `AsyncCompletionFuture` carrying a retained
-// `PreviewViewController`, which this crate marks as `Send + Sync`.
+// `PreviewViewControllerHandle`, which is `Send + Sync`.
 unsafe impl Send for AsyncStopRecording {}
 // SAFETY: see `Send` above.
 unsafe impl Sync for AsyncStopRecording {}
 
 impl Future for AsyncStopRecording {
-    type Output = Result<Option<PreviewViewController>, ReplayKitError>;
+    type Output = Result<Option<PreviewViewControllerHandle>, ReplayKitError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         Pin::new(&mut self.inner)
@@ -311,19 +309,21 @@ pub struct PreviewEventStream {
 
 impl PreviewEventStream {
     /// Register a bounded async stream backed by [`PreviewViewController::observe`].
-    #[must_use]
-    pub fn observe(controller: &PreviewViewController, capacity: usize) -> Self {
+    pub fn observe(
+        controller: &PreviewViewController,
+        capacity: usize,
+    ) -> Result<Self, ReplayKitError> {
         let (stream, sender) = BoundedAsyncStream::new(capacity);
         let observer = controller.observe(move |event| {
             catch_user_panic("replaykit::async_api::preview_event_stream", || {
                 sender.push(event);
             });
-        });
+        })?;
 
-        Self {
+        Ok(Self {
             inner: stream,
             _observer: observer,
-        }
+        })
     }
 
     /// Await the next buffered preview event.

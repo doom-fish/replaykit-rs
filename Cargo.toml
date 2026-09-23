@@ -50,6 +50,10 @@ pollster = "0.3"
 default = []
 async = []
 
+[[test]]
+name = "main_thread_tests"
+harness = false
+
 [package.metadata.docs.rs]
 all-features = true
 default-target = "aarch64-apple-darwin"

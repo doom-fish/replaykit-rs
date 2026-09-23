@@ -57,9 +57,31 @@ public func rk_preview_view_controller_is_supported() -> Bool {
     return false
 }
 
+@_cdecl("rk_preview_view_controller_retain_on_main_thread")
+public func rk_preview_view_controller_retain_on_main_thread(
+    _ ptr: UnsafeMutableRawPointer,
+    _ outController: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    outController?.pointee = nil
+    guard rkRequireMainThread("RPPreviewViewController", outError) else {
+        return RK_MAIN_THREAD_REQUIRED
+    }
+    outController?.pointee = rk_object_retain(ptr)
+    return RK_OK
+}
+
 @_cdecl("rk_preview_view_controller_is_view_loaded")
-public func rk_preview_view_controller_is_view_loaded(_ ptr: UnsafeMutableRawPointer) -> Bool {
-    rk_borrow(ptr, as: RPPreviewViewController.self).isViewLoaded
+public func rk_preview_view_controller_is_view_loaded(
+    _ ptr: UnsafeMutableRawPointer,
+    _ outLoaded: UnsafeMutablePointer<Bool>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    guard rkRequireMainThread("RPPreviewViewController.isViewLoaded", outError) else {
+        return RK_MAIN_THREAD_REQUIRED
+    }
+    outLoaded?.pointee = rk_borrow(ptr, as: RPPreviewViewController.self).isViewLoaded
+    return RK_OK
 }
 
 @_cdecl("rk_preview_view_controller_set_delegate")
@@ -72,8 +94,14 @@ public func rk_preview_view_controller_set_delegate(
     ) -> Void,
     _ refcon: UnsafeMutableRawPointer?,
     _ contextRetain: RKContextCallback,
-    _ contextRelease: RKContextCallback
-) -> UnsafeMutableRawPointer {
+    _ contextRelease: RKContextCallback,
+    _ outHolder: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    outHolder?.pointee = nil
+    guard rkRequireMainThread("RPPreviewViewController.previewControllerDelegate", outError) else {
+        return RK_MAIN_THREAD_REQUIRED
+    }
     let controller = rk_borrow(controllerPtr, as: RPPreviewViewController.self)
     let holder = RKPreviewDelegateHolder(
         callback: callback,
@@ -83,13 +111,16 @@ public func rk_preview_view_controller_set_delegate(
         controller: controller
     )
     controller.previewControllerDelegate = holder
-    return rk_retain(holder)
+    outHolder?.pointee = rk_retain(holder)
+    return RK_OK
 }
 
 @_cdecl("rk_preview_view_controller_clear_delegate")
 public func rk_preview_view_controller_clear_delegate(_ holderPtr: UnsafeMutableRawPointer) {
     let holder = Unmanaged<RKPreviewDelegateHolder>.fromOpaque(holderPtr).takeRetainedValue()
-    if let controller = holder.controller, controller.previewControllerDelegate === holder {
-        controller.previewControllerDelegate = nil
+    rkOnMainThread {
+        if let controller = holder.controller, controller.previewControllerDelegate === holder {
+            controller.previewControllerDelegate = nil
+        }
     }
 }

@@ -20,6 +20,7 @@ pub enum ReplayKitError {
     TimedOut(String),
     /// The feature is not supported on this platform or OS version.
     NotSupported(String),
+    MainThreadRequired(String),
     /// An underlying `ReplayKit` / Objective-C framework error.
     Framework(ReplayKitFrameworkError),
     /// An error with no further classification.
@@ -32,6 +33,7 @@ impl fmt::Display for ReplayKitError {
             Self::InvalidArgument(msg)
             | Self::TimedOut(msg)
             | Self::NotSupported(msg)
+            | Self::MainThreadRequired(msg)
             | Self::Unknown(msg) => f.write_str(msg),
             Self::Framework(err) => write!(
                 f,
@@ -174,6 +176,7 @@ pub(crate) unsafe fn from_swift(status: i32, err_msg: *mut c_char) -> ReplayKitE
         s if s == status::INVALID_ARGUMENT => ReplayKitError::InvalidArgument(msg),
         s if s == status::TIMED_OUT => ReplayKitError::TimedOut(msg),
         s if s == status::NOT_SUPPORTED => ReplayKitError::NotSupported(msg),
+        s if s == status::MAIN_THREAD_REQUIRED => ReplayKitError::MainThreadRequired(msg),
         s if s == status::FRAMEWORK_ERROR => parse_framework_error(&msg),
         _ => ReplayKitError::Unknown(if msg.is_empty() {
             format!("unknown error (status={status})")

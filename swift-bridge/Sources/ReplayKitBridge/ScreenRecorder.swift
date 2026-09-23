@@ -245,15 +245,31 @@ public func rk_screen_recorder_set_camera_position(
 }
 
 @_cdecl("rk_screen_recorder_camera_preview_view")
-public func rk_screen_recorder_camera_preview_view(_ ptr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+public func rk_screen_recorder_camera_preview_view(
+    _ ptr: UnsafeMutableRawPointer,
+    _ outView: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    outView?.pointee = nil
+    guard rkRequireMainThread("RPScreenRecorder.cameraPreviewView", outError) else {
+        return RK_MAIN_THREAD_REQUIRED
+    }
     let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
-    guard let view = recorder.cameraPreviewView else { return nil }
-    return rk_retain(view)
+    outView?.pointee = recorder.cameraPreviewView.map(rk_retain)
+    return RK_OK
 }
 
 @_cdecl("rk_ns_view_is_hidden")
-public func rk_ns_view_is_hidden(_ ptr: UnsafeMutableRawPointer) -> Bool {
-    rk_borrow(ptr, as: NSView.self).isHidden
+public func rk_ns_view_is_hidden(
+    _ ptr: UnsafeMutableRawPointer,
+    _ outHidden: UnsafeMutablePointer<Bool>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    guard rkRequireMainThread("NSView.isHidden", outError) else {
+        return RK_MAIN_THREAD_REQUIRED
+    }
+    outHidden?.pointee = rk_borrow(ptr, as: NSView.self).isHidden
+    return RK_OK
 }
 
 @_cdecl("rk_screen_recorder_state_json")

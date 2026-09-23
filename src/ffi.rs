@@ -32,5 +32,6 @@ pub mod status {
     pub const TIMED_OUT: i32 = -2;
     pub const NOT_SUPPORTED: i32 = -3;
     pub const FRAMEWORK_ERROR: i32 = -4;
+    pub const MAIN_THREAD_REQUIRED: i32 = -5;
     pub const UNKNOWN: i32 = -99;
 }

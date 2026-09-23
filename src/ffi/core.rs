@@ -4,5 +4,6 @@ extern "C" {
     pub fn rk_string_free(s: *mut c_char);
     pub fn rk_object_retain(ptr: *mut c_void) -> *mut c_void;
     pub fn rk_object_release(ptr: *mut c_void);
+    pub fn rk_object_release_on_main_thread(ptr: *mut c_void);
     pub fn rk_object_class_name(ptr: *mut c_void) -> *mut c_char;
 }

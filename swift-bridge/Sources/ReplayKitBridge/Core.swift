@@ -249,39 +249,76 @@ func rkDictionaryFromJSON(
 
 // MARK: - Semaphore / Task helpers
 
-func rkBlockOnAsync<T>(
-    timeoutSeconds: Int = 30,
-    work: @escaping () async throws -> T,
-    onSuccess: @escaping (T) -> Void,
-    onError: @escaping (Error) -> Void
-) -> Int32 {
-    let semaphore = DispatchSemaphore(value: 0)
-    var result: Result<T, Error>?
+private final class RKBlockingCall<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+    private let onLateSuccess: ((T) -> Void)?
+    private var outcome: Result<T, Error>?
+    private var finished = false
+    private var abandoned = false
 
-    Task {
-        do {
-            result = .success(try await work())
-        } catch {
-            result = .failure(error)
+    init(onLateSuccess: ((T) -> Void)?) {
+        self.onLateSuccess = onLateSuccess
+    }
+
+    func finish(_ result: Result<T, Error>) {
+        lock.lock()
+        guard !finished else {
+            lock.unlock()
+            return
         }
+        finished = true
+        guard !abandoned else {
+            lock.unlock()
+            if case .success(let value) = result {
+                onLateSuccess?(value)
+            }
+            return
+        }
+        outcome = result
+        lock.unlock()
         semaphore.signal()
     }
 
-    guard semaphore.wait(timeout: .now() + .seconds(timeoutSeconds)) == .success else {
+    func wait(timeoutSeconds: Int) -> Result<T, Error>? {
+        _ = semaphore.wait(timeout: .now() + .seconds(timeoutSeconds))
+        lock.lock()
+        defer { lock.unlock() }
+        if outcome == nil {
+            abandoned = true
+        }
+        return outcome
+    }
+}
+
+func rkBlockOnAsync<T>(
+    timeoutSeconds: Int = 30,
+    work: @escaping () async throws -> T,
+    onLateSuccess: ((T) -> Void)? = nil,
+    onSuccess: (T) -> Void,
+    onError: (Error) -> Void
+) -> Int32 {
+    let call = RKBlockingCall<T>(onLateSuccess: onLateSuccess)
+    let task = Task {
+        do {
+            call.finish(.success(try await work()))
+        } catch {
+            call.finish(.failure(error))
+        }
+    }
+
+    guard let outcome = call.wait(timeoutSeconds: timeoutSeconds) else {
+        task.cancel()
         onError(RKBridgeError.timedOut("ReplayKit operation timed out after \(timeoutSeconds) seconds"))
         return RK_TIMED_OUT
     }
 
-    switch result {
+    switch outcome {
     case .success(let value):
         onSuccess(value)
         return RK_OK
     case .failure(let error):
         onError(error)
         return rkStatus(for: error)
-    case .none:
-        let err = RKBridgeError.unknown("ReplayKit operation completed without a result")
-        onError(err)
-        return err.statusCode
     }
 }

@@ -293,6 +293,11 @@ public func rk_screen_recorder_start_recording(
                 }
             }
         },
+        onLateSuccess: { _ in
+            recorder.stopRecording { _, _ in
+                recorder.discardRecording {}
+            }
+        },
         onSuccess: { _ in },
         onError: { rkPopulateError(outError, with: $0) }
     )
@@ -424,6 +429,7 @@ public func rk_screen_recorder_start_clip_buffering(
                 }
             }
         },
+        onLateSuccess: { _ in recorder.stopClipBuffering { _ in } },
         onSuccess: { _ in },
         onError: { rkPopulateError(outError, with: $0) }
     )

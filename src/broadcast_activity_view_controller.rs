@@ -81,8 +81,8 @@ unsafe extern "C" fn show_trampoline(
 }
 
 /// Explicit macOS wrapper for the iOS-only `RPBroadcastActivityViewController` area.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct BroadcastActivityViewController;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BroadcastActivityViewController {}
 
 impl BroadcastActivityViewController {
     /// Whether the iOS broadcast-activity view controller is available.

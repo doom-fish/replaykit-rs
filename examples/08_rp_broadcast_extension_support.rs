@@ -6,7 +6,6 @@ use replaykit::{
 fn main() {
     let context = BroadcastExtensionContext::new();
     let handler = BroadcastHandler::new();
-    let sample_handler = BroadcastSampleHandler::new();
 
     println!(
         "broadcast_extension_supported={}",
@@ -14,7 +13,14 @@ fn main() {
     );
     println!("context_class={}", context.class_name());
     println!("handler_class={}", handler.class_name());
-    println!("sample_handler_class={}", sample_handler.class_name());
+    println!(
+        "sample_handler_supported={}",
+        BroadcastSampleHandler::is_supported_on_current_platform()
+    );
+    println!(
+        "sample_handler_reason={}",
+        BroadcastSampleHandler::unsupported_reason()
+    );
     println!(
         "application_info_bundle_identifier_key={RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY}"
     );

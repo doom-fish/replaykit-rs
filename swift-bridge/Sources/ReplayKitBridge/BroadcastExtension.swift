@@ -136,123 +136,13 @@ public func rk_broadcast_handler_update_broadcast_url(
 
 @_cdecl("rk_broadcast_sample_handler_is_supported")
 public func rk_broadcast_sample_handler_is_supported() -> Bool {
-    if #available(macOS 11.0, *) {
-        return true
-    }
-    return false
+    false
 }
 
-@_cdecl("rk_broadcast_sample_handler_new")
-public func rk_broadcast_sample_handler_new() -> UnsafeMutableRawPointer {
-    rk_retain(RPBroadcastSampleHandler())
-}
-
-@_cdecl("rk_broadcast_sample_handler_update_service_info")
-public func rk_broadcast_sample_handler_update_service_info(
-    _ ptr: UnsafeMutableRawPointer,
-    _ serviceInfoJSON: UnsafePointer<CChar>?,
-    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
-) -> Int32 {
-    do {
-        try rkBroadcastHandlerUpdateServiceInfo(
-            rk_borrow(ptr, as: RPBroadcastSampleHandler.self),
-            serviceInfoJSON: serviceInfoJSON
-        )
-        return RK_OK
-    } catch {
-        rkPopulateError(outError, with: error)
-        return rkStatus(for: error)
-    }
-}
-
-@_cdecl("rk_broadcast_sample_handler_update_broadcast_url")
-public func rk_broadcast_sample_handler_update_broadcast_url(
-    _ ptr: UnsafeMutableRawPointer,
-    _ broadcastURL: UnsafePointer<CChar>?,
-    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
-) -> Int32 {
-    do {
-        try rkBroadcastHandlerUpdateBroadcastURL(
-            rk_borrow(ptr, as: RPBroadcastSampleHandler.self),
-            broadcastURL: broadcastURL
-        )
-        return RK_OK
-    } catch {
-        rkPopulateError(outError, with: error)
-        return rkStatus(for: error)
-    }
-}
-
-@_cdecl("rk_broadcast_sample_handler_broadcast_started")
-public func rk_broadcast_sample_handler_broadcast_started(
-    _ ptr: UnsafeMutableRawPointer,
-    _ setupInfoJSON: UnsafePointer<CChar>?,
-    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
-) -> Int32 {
-    do {
-        let sampleHandler = rk_borrow(ptr, as: RPBroadcastSampleHandler.self)
-        let setupInfo = try rkDictionaryFromJSON(setupInfoJSON, context: "broadcast setup info")
-        sampleHandler.broadcastStarted(withSetupInfo: setupInfo)
-        return RK_OK
-    } catch {
-        rkPopulateError(outError, with: error)
-        return rkStatus(for: error)
-    }
-}
-
-@_cdecl("rk_broadcast_sample_handler_broadcast_paused")
-public func rk_broadcast_sample_handler_broadcast_paused(_ ptr: UnsafeMutableRawPointer) {
-    rk_borrow(ptr, as: RPBroadcastSampleHandler.self).broadcastPaused()
-}
-
-@_cdecl("rk_broadcast_sample_handler_broadcast_resumed")
-public func rk_broadcast_sample_handler_broadcast_resumed(_ ptr: UnsafeMutableRawPointer) {
-    rk_borrow(ptr, as: RPBroadcastSampleHandler.self).broadcastResumed()
-}
-
-@_cdecl("rk_broadcast_sample_handler_broadcast_finished")
-public func rk_broadcast_sample_handler_broadcast_finished(_ ptr: UnsafeMutableRawPointer) {
-    rk_borrow(ptr, as: RPBroadcastSampleHandler.self).broadcastFinished()
-}
-
-@_cdecl("rk_broadcast_sample_handler_broadcast_annotated_with_application_info")
-public func rk_broadcast_sample_handler_broadcast_annotated_with_application_info(
-    _ ptr: UnsafeMutableRawPointer,
-    _ applicationInfoJSON: UnsafePointer<CChar>?,
-    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
-) -> Int32 {
-    do {
-        let sampleHandler = rk_borrow(ptr, as: RPBroadcastSampleHandler.self)
-        let applicationInfo = try rkDictionaryFromJSON(
-            applicationInfoJSON,
-            context: "broadcast application info"
-        ) ?? [:]
-        sampleHandler.broadcastAnnotated(withApplicationInfo: applicationInfo)
-        return RK_OK
-    } catch {
-        rkPopulateError(outError, with: error)
-        return rkStatus(for: error)
-    }
-}
-
-@_cdecl("rk_broadcast_sample_handler_finish_broadcast_with_error")
-public func rk_broadcast_sample_handler_finish_broadcast_with_error(
-    _ ptr: UnsafeMutableRawPointer,
-    _ domain: UnsafePointer<CChar>?,
-    _ code: Int64,
-    _ localizedDescription: UnsafePointer<CChar>?,
-    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
-) -> Int32 {
-    let sampleHandler = rk_borrow(ptr, as: RPBroadcastSampleHandler.self)
-    let error = NSError(
-        domain: domain.map { String(cString: $0) } ?? RPRecordingErrorDomain,
-        code: Int(clamping: code),
-        userInfo: [
-            NSLocalizedDescriptionKey: localizedDescription.map { String(cString: $0) } ??
-                "Broadcast finished with an error"
-        ]
+@_cdecl("rk_broadcast_sample_handler_unavailable_reason")
+public func rk_broadcast_sample_handler_unavailable_reason() -> UnsafeMutablePointer<CChar>? {
+    rkCString(
+        "RPBroadcastSampleHandler only works as the principal class of a broadcast upload "
+            + "extension; replaykit-rs has no subclass that forwards processSampleBuffer to Rust"
     )
-    sampleHandler.finishBroadcastWithError(error)
-    outError?.pointee = nil
-    return RK_OK
 }

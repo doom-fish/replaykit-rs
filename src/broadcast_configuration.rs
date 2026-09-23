@@ -3,8 +3,8 @@ use crate::ffi;
 use crate::private::take_string;
 
 /// Explicit macOS wrapper for the deprecated iOS-only `RPBroadcastConfiguration`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct BroadcastConfiguration;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BroadcastConfiguration {}
 
 impl BroadcastConfiguration {
     /// Whether `RPBroadcastConfiguration` is available on this platform.

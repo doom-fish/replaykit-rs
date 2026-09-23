@@ -3,8 +3,8 @@ use crate::ffi;
 use crate::private::take_string;
 
 /// Explicit macOS wrapper for the iOS-only `RPSystemBroadcastPickerView`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct SystemBroadcastPickerView;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemBroadcastPickerView {}
 
 impl SystemBroadcastPickerView {
     /// Whether the system broadcast picker view is available on this platform.

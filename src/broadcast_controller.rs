@@ -1,16 +1,14 @@
 use core::ffi::{c_char, c_void};
 use std::ptr;
 
+use doom_fish_utils::callback_context::CallbackContext;
 use serde_json::Value;
 
 use crate::error::ReplayKitError;
 use crate::ffi;
-use crate::private::{
-    context_release_cb, context_retain_cb, parse_json_ptr, result_from_status, take_string,
-    CallbackBox,
-};
+use crate::private::{parse_json_ptr, result_from_status, take_string};
 
-type BroadcastControllerHandler = dyn Fn(BroadcastControllerEvent) + Send + 'static;
+type BroadcastControllerHandler = Box<dyn Fn(BroadcastControllerEvent) + Send + Sync>;
 
 /// Events emitted by `RPBroadcastControllerDelegate`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,22 +71,20 @@ impl BroadcastController {
     /// Registers a delegate callback for broadcast-controller events.
     pub fn observe<F>(&self, handler: F) -> BroadcastControllerObserver
     where
-        F: Fn(BroadcastControllerEvent) + Send + 'static,
+        F: Fn(BroadcastControllerEvent) + Send + Sync + 'static,
     {
-        let boxed: Box<BroadcastControllerHandler> = Box::new(handler);
-        let context = CallbackBox::into_raw(boxed);
-        let refcon = context.cast::<c_void>();
+        let handler: BroadcastControllerHandler = Box::new(handler);
+        let context = CallbackContext::new(handler);
         let holder_ptr = unsafe {
             ffi::rk_broadcast_controller_set_delegate(
                 self.ptr,
                 delegate_trampoline,
-                refcon,
-                context_retain_cb::<BroadcastControllerHandler>,
-                context_release_cb::<BroadcastControllerHandler>,
+                context.as_ptr(),
+                CallbackContext::<BroadcastControllerHandler>::RETAIN,
+                CallbackContext::<BroadcastControllerHandler>::RELEASE,
             )
         };
         BroadcastControllerObserver {
-            controller_ptr: self.ptr,
             holder_ptr,
             context,
         }
@@ -137,7 +133,7 @@ impl std::fmt::Debug for BroadcastController {
 }
 
 unsafe extern "C" fn delegate_trampoline(
-    refcon: *mut c_void,
+    context: *mut c_void,
     event_kind: i32,
     payload: *mut c_char,
 ) {
@@ -162,18 +158,19 @@ unsafe extern "C" fn delegate_trampoline(
             ))),
         },
     };
-    let handler = unsafe { CallbackBox::<BroadcastControllerHandler>::handler(refcon.cast()) };
-    doom_fish_utils::panic_safe::catch_user_panic(
-        "replaykit::broadcast_controller::delegate_trampoline",
-        || handler(event),
-    );
+    unsafe {
+        CallbackContext::<BroadcastControllerHandler>::with(
+            context,
+            "replaykit::broadcast_controller::delegate_trampoline",
+            |handler| handler(event),
+        )
+    };
 }
 
 /// RAII guard returned by [`BroadcastController::observe`].
 pub struct BroadcastControllerObserver {
-    controller_ptr: *mut c_void,
     holder_ptr: *mut c_void,
-    context: *mut CallbackBox<BroadcastControllerHandler>,
+    context: CallbackContext<BroadcastControllerHandler>,
 }
 
 unsafe impl Send for BroadcastControllerObserver {}
@@ -181,13 +178,8 @@ unsafe impl Sync for BroadcastControllerObserver {}
 
 impl Drop for BroadcastControllerObserver {
     fn drop(&mut self) {
-        unsafe {
-            ffi::rk_broadcast_controller_clear_delegate(self.controller_ptr, self.holder_ptr);
-            // Release this guard's reference. The Swift holder dropped its own
-            // reference in `deinit` (triggered by `clear_delegate`), so the
-            // `CallbackBox` is freed only once no callback can still run.
-            CallbackBox::release(self.context);
-        }
+        self.context.deactivate();
+        unsafe { ffi::rk_broadcast_controller_clear_delegate(self.holder_ptr) };
     }
 }
 

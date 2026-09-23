@@ -148,3 +148,9 @@ pub extern "C" fn context_retain_cb<T: ?Sized>(context: *mut c_void) {
 pub extern "C" fn context_release_cb<T: ?Sized>(context: *mut c_void) {
     unsafe { CallbackBox::<T>::release(context.cast::<CallbackBox<T>>()) };
 }
+
+#[cfg(test)]
+pub fn recorder_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}

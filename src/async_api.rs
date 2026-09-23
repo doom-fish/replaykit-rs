@@ -673,6 +673,7 @@ mod tests {
 
     #[test]
     fn detailed_event_stream_can_be_created() {
+        let _lock = crate::private::recorder_test_lock();
         let Some(recorder) = ScreenRecorder::shared() else {
             return;
         };

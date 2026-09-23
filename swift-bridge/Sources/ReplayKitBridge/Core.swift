@@ -23,6 +23,8 @@ public func rk_string_free(_ ptr: UnsafeMutablePointer<CChar>?) {
 
 // MARK: - Raw-pointer retain / release / borrow helpers
 
+public typealias RKContextCallback = @convention(c) (UnsafeMutableRawPointer?) -> Void
+
 @inline(__always)
 func rk_retain<T: AnyObject>(_ object: T) -> UnsafeMutableRawPointer {
     Unmanaged.passRetained(object).toOpaque()

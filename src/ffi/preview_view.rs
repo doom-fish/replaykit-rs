@@ -7,11 +7,8 @@ extern "C" {
         controller_ptr: *mut c_void,
         callback: unsafe extern "C" fn(*mut c_void, i32, *mut c_char),
         refcon: *mut c_void,
-        context_retain: extern "C" fn(*mut c_void),
-        context_release: extern "C" fn(*mut c_void),
+        context_retain: unsafe extern "C" fn(*mut c_void),
+        context_release: unsafe extern "C" fn(*mut c_void),
     ) -> *mut c_void;
-    pub fn rk_preview_view_controller_clear_delegate(
-        controller_ptr: *mut c_void,
-        holder_ptr: *mut c_void,
-    );
+    pub fn rk_preview_view_controller_clear_delegate(holder_ptr: *mut c_void);
 }

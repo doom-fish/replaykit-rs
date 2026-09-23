@@ -48,22 +48,21 @@ extern "C" {
         out_error: *mut *mut c_char,
     ) -> i32;
 
-    pub fn rk_screen_recorder_set_delegate(
+    pub fn rk_screen_recorder_add_summary_observer(
         recorder_ptr: *mut c_void,
         callback: unsafe extern "C" fn(*mut c_void, *const c_char),
-        refcon: *mut c_void,
-    ) -> *mut c_void;
-    pub fn rk_screen_recorder_clear_delegate(recorder_ptr: *mut c_void, holder_ptr: *mut c_void);
-
-    pub fn rk_screen_recorder_set_detailed_delegate(
+        context: *mut c_void,
+        context_retain: unsafe extern "C" fn(*mut c_void),
+        context_release: unsafe extern "C" fn(*mut c_void),
+    ) -> u64;
+    pub fn rk_screen_recorder_add_detailed_observer(
         recorder_ptr: *mut c_void,
         callback: unsafe extern "C" fn(*mut c_void, i32, bool, *mut c_void, *mut c_char),
-        refcon: *mut c_void,
-    ) -> *mut c_void;
-    pub fn rk_screen_recorder_clear_detailed_delegate(
-        recorder_ptr: *mut c_void,
-        holder_ptr: *mut c_void,
-    );
+        context: *mut c_void,
+        context_retain: unsafe extern "C" fn(*mut c_void),
+        context_release: unsafe extern "C" fn(*mut c_void),
+    ) -> u64;
+    pub fn rk_screen_recorder_remove_observer(token: u64);
 
     pub fn rk_ns_view_is_hidden(ptr: *mut c_void) -> bool;
 }

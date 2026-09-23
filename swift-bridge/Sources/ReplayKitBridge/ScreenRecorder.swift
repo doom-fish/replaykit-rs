@@ -22,65 +22,145 @@ struct RKRecordingErrorPayload: Encodable {
 private let RKScreenRecorderAvailabilityChangedEvent: Int32 = 1
 private let RKScreenRecorderDidStopRecordingEvent: Int32 = 2
 
-// MARK: - Delegate holders
+// MARK: - Delegate multiplexer
 
-final class RKDelegateHolder: NSObject, RPScreenRecorderDelegate {
-    typealias Callback = @convention(c) (
-        UnsafeMutableRawPointer?,
-        UnsafePointer<CChar>?
-    ) -> Void
+public typealias RKRecorderSummaryCallback = @convention(c) (
+    UnsafeMutableRawPointer?,
+    UnsafePointer<CChar>?
+) -> Void
 
-    let callback: Callback
-    let refcon: UnsafeMutableRawPointer?
+public typealias RKRecorderDetailedCallback = @convention(c) (
+    UnsafeMutableRawPointer?,
+    Int32,
+    Bool,
+    UnsafeMutableRawPointer?,
+    UnsafeMutablePointer<CChar>?
+) -> Void
 
-    init(callback: @escaping Callback, refcon: UnsafeMutableRawPointer?) {
+private enum RKRecorderObserverCallback {
+    case summary(RKRecorderSummaryCallback)
+    case detailed(RKRecorderDetailedCallback)
+}
+
+private func rkRecordingSummaryStopPayload(_ error: Error?) -> String {
+    guard let error else {
+        return #"{"kind":"didStopRecording","error":null}"#
+    }
+    let ns = error as NSError
+    let inner = RKRecordingErrorPayload(
+        domain: ns.domain,
+        code: ns.code,
+        localizedDescription: ns.localizedDescription
+    )
+    return (try? rkEncodeJSON(["kind": "didStopRecording",
+                               "error": rkEncodeJSON(inner)])) ??
+        #"{"kind":"didStopRecording"}"#
+}
+
+private final class RKRecorderObserver {
+    let callback: RKRecorderObserverCallback
+    let context: UnsafeMutableRawPointer?
+    let contextRelease: RKContextCallback
+
+    init(
+        callback: RKRecorderObserverCallback,
+        context: UnsafeMutableRawPointer?,
+        contextRetain: RKContextCallback,
+        contextRelease: RKContextCallback
+    ) {
         self.callback = callback
-        self.refcon = refcon
+        self.context = context
+        self.contextRelease = contextRelease
+        contextRetain(context)
     }
 
-    func screenRecorder(
+    deinit {
+        contextRelease(context)
+    }
+
+    func didStopRecording(
         _ screenRecorder: RPScreenRecorder,
-        didStopRecordingWith previewViewController: RPPreviewViewController?,
+        previewViewController: RPPreviewViewController?,
         error: Error?
     ) {
-        let payload: String
-        if let error {
-            let ns = error as NSError
-            let inner = RKRecordingErrorPayload(
-                domain: ns.domain,
-                code: ns.code,
-                localizedDescription: ns.localizedDescription
+        switch callback {
+        case .summary(let summary):
+            rkRecordingSummaryStopPayload(error).withCString { summary(context, $0) }
+        case .detailed(let detailed):
+            detailed(
+                context,
+                RKScreenRecorderDidStopRecordingEvent,
+                screenRecorder.isAvailable,
+                previewViewController.map(rk_retain),
+                error.flatMap(rkOwnedErrorCString)
             )
-            payload = (try? rkEncodeJSON(["kind": "didStopRecording",
-                                          "error": rkEncodeJSON(inner)])) ??
-                      #"{"kind":"didStopRecording"}"#
-        } else {
-            payload = #"{"kind":"didStopRecording","error":null}"#
         }
-        payload.withCString { callback(refcon, $0) }
     }
 
-    func screenRecorderDidChangeAvailability(_ screenRecorder: RPScreenRecorder) {
-        let payload = #"{"kind":"availabilityChanged","isAvailable":\#(screenRecorder.isAvailable)}"#
-        payload.withCString { callback(refcon, $0) }
+    func availabilityChanged(_ screenRecorder: RPScreenRecorder) {
+        switch callback {
+        case .summary(let summary):
+            let payload = #"{"kind":"availabilityChanged","isAvailable":\#(screenRecorder.isAvailable)}"#
+            payload.withCString { summary(context, $0) }
+        case .detailed(let detailed):
+            detailed(
+                context,
+                RKScreenRecorderAvailabilityChangedEvent,
+                screenRecorder.isAvailable,
+                nil,
+                nil
+            )
+        }
     }
 }
 
-final class RKDetailedDelegateHolder: NSObject, RPScreenRecorderDelegate {
-    typealias Callback = @convention(c) (
-        UnsafeMutableRawPointer?,
-        Int32,
-        Bool,
-        UnsafeMutableRawPointer?,
-        UnsafeMutablePointer<CChar>?
-    ) -> Void
+private final class RKScreenRecorderDelegateMux: NSObject, RPScreenRecorderDelegate {
+    static let shared = RKScreenRecorderDelegateMux()
 
-    let callback: Callback
-    let refcon: UnsafeMutableRawPointer?
+    private let lock = NSLock()
+    private let slotLock = NSRecursiveLock()
+    private var observers: [(token: UInt64, observer: RKRecorderObserver)] = []
+    private var lastToken: UInt64 = 0
+    private weak var recorder: RPScreenRecorder?
 
-    init(callback: @escaping Callback, refcon: UnsafeMutableRawPointer?) {
-        self.callback = callback
-        self.refcon = refcon
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
+    func add(_ observer: RKRecorderObserver, to screenRecorder: RPScreenRecorder) -> UInt64 {
+        slotLock.lock()
+        defer { slotLock.unlock() }
+        let token: UInt64 = locked {
+            lastToken &+= 1
+            observers.append((token: lastToken, observer: observer))
+            recorder = screenRecorder
+            return lastToken
+        }
+        if screenRecorder.delegate !== self {
+            screenRecorder.delegate = self
+        }
+        return token
+    }
+
+    func remove(_ token: UInt64) {
+        slotLock.lock()
+        let (removed, isEmpty): (RKRecorderObserver?, Bool) = locked {
+            guard let index = observers.firstIndex(where: { $0.token == token }) else {
+                return (nil, observers.isEmpty)
+            }
+            return (observers.remove(at: index).observer, observers.isEmpty)
+        }
+        if isEmpty, let recorder, recorder.delegate === self {
+            recorder.delegate = nil
+        }
+        slotLock.unlock()
+        withExtendedLifetime(removed) {}
+    }
+
+    private func snapshot() -> [RKRecorderObserver] {
+        locked { observers.map(\.observer) }
     }
 
     func screenRecorder(
@@ -88,24 +168,19 @@ final class RKDetailedDelegateHolder: NSObject, RPScreenRecorderDelegate {
         didStopRecordingWith previewViewController: RPPreviewViewController?,
         error: Error?
     ) {
-        let previewPointer = previewViewController.map(rk_retain)
-        callback(
-            refcon,
-            RKScreenRecorderDidStopRecordingEvent,
-            screenRecorder.isAvailable,
-            previewPointer,
-            error.flatMap(rkOwnedErrorCString)
-        )
+        for observer in snapshot() {
+            observer.didStopRecording(
+                screenRecorder,
+                previewViewController: previewViewController,
+                error: error
+            )
+        }
     }
 
     func screenRecorderDidChangeAvailability(_ screenRecorder: RPScreenRecorder) {
-        callback(
-            refcon,
-            RKScreenRecorderAvailabilityChangedEvent,
-            screenRecorder.isAvailable,
-            nil,
-            nil
-        )
+        for observer in snapshot() {
+            observer.availabilityChanged(screenRecorder)
+        }
     }
 }
 
@@ -423,52 +498,47 @@ public func rk_screen_recorder_export_clip_to_output_url(
 
 // MARK: - Delegate registration
 
-@_cdecl("rk_screen_recorder_set_delegate")
-public func rk_screen_recorder_set_delegate(
+@_cdecl("rk_screen_recorder_add_summary_observer")
+public func rk_screen_recorder_add_summary_observer(
     _ recorderPtr: UnsafeMutableRawPointer,
-    _ callback: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void,
-    _ refcon: UnsafeMutableRawPointer?
-) -> UnsafeMutableRawPointer {
-    let recorder = rk_borrow(recorderPtr, as: RPScreenRecorder.self)
-    let holder = RKDelegateHolder(callback: callback, refcon: refcon)
-    recorder.delegate = holder
-    return rk_retain(holder)
+    _ callback: RKRecorderSummaryCallback,
+    _ context: UnsafeMutableRawPointer?,
+    _ contextRetain: RKContextCallback,
+    _ contextRelease: RKContextCallback
+) -> UInt64 {
+    let observer = RKRecorderObserver(
+        callback: .summary(callback),
+        context: context,
+        contextRetain: contextRetain,
+        contextRelease: contextRelease
+    )
+    return RKScreenRecorderDelegateMux.shared.add(
+        observer,
+        to: rk_borrow(recorderPtr, as: RPScreenRecorder.self)
+    )
 }
 
-@_cdecl("rk_screen_recorder_clear_delegate")
-public func rk_screen_recorder_clear_delegate(
+@_cdecl("rk_screen_recorder_add_detailed_observer")
+public func rk_screen_recorder_add_detailed_observer(
     _ recorderPtr: UnsafeMutableRawPointer,
-    _ holderPtr: UnsafeMutableRawPointer
-) {
-    let recorder = rk_borrow(recorderPtr, as: RPScreenRecorder.self)
-    recorder.delegate = nil
-    rk_release(holderPtr)
+    _ callback: RKRecorderDetailedCallback,
+    _ context: UnsafeMutableRawPointer?,
+    _ contextRetain: RKContextCallback,
+    _ contextRelease: RKContextCallback
+) -> UInt64 {
+    let observer = RKRecorderObserver(
+        callback: .detailed(callback),
+        context: context,
+        contextRetain: contextRetain,
+        contextRelease: contextRelease
+    )
+    return RKScreenRecorderDelegateMux.shared.add(
+        observer,
+        to: rk_borrow(recorderPtr, as: RPScreenRecorder.self)
+    )
 }
 
-@_cdecl("rk_screen_recorder_set_detailed_delegate")
-public func rk_screen_recorder_set_detailed_delegate(
-    _ recorderPtr: UnsafeMutableRawPointer,
-    _ callback: @convention(c) (
-        UnsafeMutableRawPointer?,
-        Int32,
-        Bool,
-        UnsafeMutableRawPointer?,
-        UnsafeMutablePointer<CChar>?
-    ) -> Void,
-    _ refcon: UnsafeMutableRawPointer?
-) -> UnsafeMutableRawPointer {
-    let recorder = rk_borrow(recorderPtr, as: RPScreenRecorder.self)
-    let holder = RKDetailedDelegateHolder(callback: callback, refcon: refcon)
-    recorder.delegate = holder
-    return rk_retain(holder)
-}
-
-@_cdecl("rk_screen_recorder_clear_detailed_delegate")
-public func rk_screen_recorder_clear_detailed_delegate(
-    _ recorderPtr: UnsafeMutableRawPointer,
-    _ holderPtr: UnsafeMutableRawPointer
-) {
-    let recorder = rk_borrow(recorderPtr, as: RPScreenRecorder.self)
-    recorder.delegate = nil
-    rk_release(holderPtr)
+@_cdecl("rk_screen_recorder_remove_observer")
+public func rk_screen_recorder_remove_observer(_ token: UInt64) {
+    RKScreenRecorderDelegateMux.shared.remove(token)
 }

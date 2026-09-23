@@ -2,12 +2,16 @@ use core::ffi::{c_char, c_void};
 use std::path::Path;
 use std::ptr;
 
+use doom_fish_utils::callback_context::CallbackContext;
 use serde::Deserialize;
 
 use crate::error::ReplayKitError;
 use crate::ffi;
 use crate::preview_view::PreviewViewController;
 use crate::private::{error_from_status, parse_json_ptr, path_cstring, result_from_status};
+
+type RecordingHandler = Box<dyn Fn(RecordingEvent) + Send + Sync>;
+type DetailedRecordingHandler = Box<dyn Fn(DetailedRecordingEvent) + Send + Sync>;
 
 /// Events forwarded by the lightweight `RPScreenRecorderDelegate` bridge.
 #[derive(Debug, Clone)]
@@ -288,38 +292,39 @@ impl ScreenRecorder {
     /// Registers a delegate callback that receives lightweight [`RecordingEvent`] values.
     pub fn observe<F>(&self, handler: F) -> RecordingObserver
     where
-        F: Fn(RecordingEvent) + Send + 'static,
+        F: Fn(RecordingEvent) + Send + Sync + 'static,
     {
-        let boxed: Box<dyn Fn(RecordingEvent) + Send + 'static> = Box::new(handler);
-        let refcon = Box::into_raw(Box::new(boxed)).cast::<c_void>();
-        let holder_ptr =
-            unsafe { ffi::rk_screen_recorder_set_delegate(self.ptr, delegate_trampoline, refcon) };
-        RecordingObserver {
-            recorder_ptr: self.ptr,
-            holder_ptr,
-            refcon,
-        }
+        let handler: RecordingHandler = Box::new(handler);
+        let context = CallbackContext::new(handler);
+        let token = unsafe {
+            ffi::rk_screen_recorder_add_summary_observer(
+                self.ptr,
+                summary_trampoline,
+                context.as_ptr(),
+                CallbackContext::<RecordingHandler>::RETAIN,
+                CallbackContext::<RecordingHandler>::RELEASE,
+            )
+        };
+        RecordingObserver { token, context }
     }
 
     /// Registers a delegate callback that receives typed [`DetailedRecordingEvent`] values.
     pub fn observe_detailed<F>(&self, handler: F) -> DetailedRecordingObserver
     where
-        F: Fn(DetailedRecordingEvent) + Send + 'static,
+        F: Fn(DetailedRecordingEvent) + Send + Sync + 'static,
     {
-        let boxed: Box<dyn Fn(DetailedRecordingEvent) + Send + 'static> = Box::new(handler);
-        let refcon = Box::into_raw(Box::new(boxed)).cast::<c_void>();
-        let holder_ptr = unsafe {
-            ffi::rk_screen_recorder_set_detailed_delegate(
+        let handler: DetailedRecordingHandler = Box::new(handler);
+        let context = CallbackContext::new(handler);
+        let token = unsafe {
+            ffi::rk_screen_recorder_add_detailed_observer(
                 self.ptr,
-                detailed_delegate_trampoline,
-                refcon,
+                detailed_trampoline,
+                context.as_ptr(),
+                CallbackContext::<DetailedRecordingHandler>::RETAIN,
+                CallbackContext::<DetailedRecordingHandler>::RELEASE,
             )
         };
-        DetailedRecordingObserver {
-            recorder_ptr: self.ptr,
-            holder_ptr,
-            refcon,
-        }
+        DetailedRecordingObserver { token, context }
     }
 }
 
@@ -366,29 +371,29 @@ fn parse_event(json_ptr: *const c_char) -> RecordingEvent {
     }
 }
 
-unsafe extern "C" fn delegate_trampoline(refcon: *mut c_void, event_json: *const c_char) {
-    let handler = &*(refcon.cast::<Box<dyn Fn(RecordingEvent) + Send + 'static>>());
-    let event = parse_event(event_json);
-    doom_fish_utils::panic_safe::catch_user_panic(
-        "replaykit::screen_recorder::delegate_trampoline",
-        || handler(event),
-    );
+unsafe extern "C" fn summary_trampoline(context: *mut c_void, event_json: *const c_char) {
+    unsafe {
+        CallbackContext::<RecordingHandler>::with(
+            context,
+            "replaykit::screen_recorder::summary_trampoline",
+            |handler| handler(parse_event(event_json)),
+        )
+    };
 }
 
-unsafe extern "C" fn detailed_delegate_trampoline(
-    refcon: *mut c_void,
+unsafe extern "C" fn detailed_trampoline(
+    context: *mut c_void,
     event_kind: i32,
     is_available: bool,
     preview_controller_ptr: *mut c_void,
     error_json: *mut c_char,
 ) {
-    let handler = &*(refcon.cast::<Box<dyn Fn(DetailedRecordingEvent) + Send + 'static>>());
     let preview_view_controller = (!preview_controller_ptr.is_null())
-        .then(|| PreviewViewController::from_ptr(preview_controller_ptr));
+        .then(|| unsafe { PreviewViewController::from_ptr(preview_controller_ptr) });
     let error = if error_json.is_null() {
         None
     } else {
-        let message = crate::private::take_string(error_json)
+        let message = unsafe { crate::private::take_string(error_json) }
             .unwrap_or_else(|| "recording delegate error".into());
         Some(crate::error::from_message(&message))
     };
@@ -405,10 +410,13 @@ unsafe extern "C" fn detailed_delegate_trampoline(
             ))),
         },
     };
-    doom_fish_utils::panic_safe::catch_user_panic(
-        "replaykit::screen_recorder::detailed_delegate_trampoline",
-        || handler(event),
-    );
+    unsafe {
+        CallbackContext::<DetailedRecordingHandler>::with(
+            context,
+            "replaykit::screen_recorder::detailed_trampoline",
+            |handler| handler(event),
+        )
+    };
 }
 
 /// Lightweight retained wrapper around the camera preview `NSView`.
@@ -451,23 +459,14 @@ impl std::fmt::Debug for CameraPreviewView {
 
 /// RAII guard returned by [`ScreenRecorder::observe`].
 pub struct RecordingObserver {
-    recorder_ptr: *mut c_void,
-    holder_ptr: *mut c_void,
-    refcon: *mut c_void,
+    token: u64,
+    context: CallbackContext<RecordingHandler>,
 }
-
-unsafe impl Send for RecordingObserver {}
-unsafe impl Sync for RecordingObserver {}
 
 impl Drop for RecordingObserver {
     fn drop(&mut self) {
-        unsafe {
-            ffi::rk_screen_recorder_clear_delegate(self.recorder_ptr, self.holder_ptr);
-            drop(Box::from_raw(
-                self.refcon
-                    .cast::<Box<dyn Fn(RecordingEvent) + Send + 'static>>(),
-            ));
-        }
+        self.context.deactivate();
+        unsafe { ffi::rk_screen_recorder_remove_observer(self.token) };
     }
 }
 
@@ -479,23 +478,14 @@ impl std::fmt::Debug for RecordingObserver {
 
 /// RAII guard returned by [`ScreenRecorder::observe_detailed`].
 pub struct DetailedRecordingObserver {
-    recorder_ptr: *mut c_void,
-    holder_ptr: *mut c_void,
-    refcon: *mut c_void,
+    token: u64,
+    context: CallbackContext<DetailedRecordingHandler>,
 }
-
-unsafe impl Send for DetailedRecordingObserver {}
-unsafe impl Sync for DetailedRecordingObserver {}
 
 impl Drop for DetailedRecordingObserver {
     fn drop(&mut self) {
-        unsafe {
-            ffi::rk_screen_recorder_clear_detailed_delegate(self.recorder_ptr, self.holder_ptr);
-            drop(Box::from_raw(
-                self.refcon
-                    .cast::<Box<dyn Fn(DetailedRecordingEvent) + Send + 'static>>(),
-            ));
-        }
+        self.context.deactivate();
+        unsafe { ffi::rk_screen_recorder_remove_observer(self.token) };
     }
 }
 
@@ -503,5 +493,228 @@ impl std::fmt::Debug for DetailedRecordingObserver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DetailedRecordingObserver")
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::ffi::{c_char, c_void};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+
+    use super::{DetailedRecordingEvent, RecordingEvent, ScreenRecorder};
+    use crate::private::recorder_test_lock;
+
+    extern "C" {
+        fn sel_registerName(name: *const c_char) -> *mut c_void;
+        fn objc_msgSend();
+        fn objc_autoreleasePoolPush() -> *mut c_void;
+        fn objc_autoreleasePoolPop(pool: *mut c_void);
+    }
+
+    fn with_autorelease_pool<R>(body: impl FnOnce() -> R) -> R {
+        let pool = unsafe { objc_autoreleasePoolPush() };
+        let result = body();
+        unsafe { objc_autoreleasePoolPop(pool) };
+        result
+    }
+
+    fn has_delegate(recorder: &ScreenRecorder) -> bool {
+        with_autorelease_pool(|| !recorder_delegate(recorder).is_null())
+    }
+
+    fn recorder_delegate(recorder: &ScreenRecorder) -> *mut c_void {
+        let send = unsafe {
+            std::mem::transmute::<
+                unsafe extern "C" fn(),
+                unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void,
+            >(objc_msgSend)
+        };
+        unsafe { send(recorder.as_ptr(), sel_registerName(c"delegate".as_ptr())) }
+    }
+
+    fn notify_availability_changed(recorder: &ScreenRecorder) {
+        with_autorelease_pool(|| {
+            let delegate = recorder_delegate(recorder);
+            if delegate.is_null() {
+                return;
+            }
+            let send = unsafe {
+                std::mem::transmute::<
+                    unsafe extern "C" fn(),
+                    unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void),
+                >(objc_msgSend)
+            };
+            unsafe {
+                send(
+                    delegate,
+                    sel_registerName(c"screenRecorderDidChangeAvailability:".as_ptr()),
+                    recorder.as_ptr(),
+                );
+            }
+        });
+    }
+
+    fn notify_did_stop_recording(recorder: &ScreenRecorder) {
+        with_autorelease_pool(|| {
+            let delegate = recorder_delegate(recorder);
+            if delegate.is_null() {
+                return;
+            }
+            let send = unsafe {
+                std::mem::transmute::<
+                    unsafe extern "C" fn(),
+                    unsafe extern "C" fn(
+                        *mut c_void,
+                        *mut c_void,
+                        *mut c_void,
+                        *mut c_void,
+                        *mut c_void,
+                    ),
+                >(objc_msgSend)
+            };
+            unsafe {
+                send(
+                    delegate,
+                    sel_registerName(
+                        c"screenRecorder:didStopRecordingWithPreviewViewController:error:".as_ptr(),
+                    ),
+                    recorder.as_ptr(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                );
+            }
+        });
+    }
+
+    fn counter() -> (Arc<AtomicUsize>, Arc<AtomicUsize>) {
+        let hits = Arc::new(AtomicUsize::new(0));
+        (Arc::clone(&hits), hits)
+    }
+
+    #[test]
+    fn observers_share_the_recorder_delegate_slot() {
+        let _lock = recorder_test_lock();
+        let recorder = ScreenRecorder::shared().expect("shared recorder");
+        let (summary_hits, summary_sink) = counter();
+        let (detailed_hits, detailed_sink) = counter();
+
+        let summary = recorder.observe(move |event| {
+            if matches!(event, RecordingEvent::AvailabilityChanged { .. }) {
+                summary_sink.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+        let detailed = recorder.observe_detailed(move |event| {
+            if matches!(event, DetailedRecordingEvent::AvailabilityChanged { .. }) {
+                detailed_sink.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+        assert!(has_delegate(&recorder));
+        let summary_before = summary_hits.load(Ordering::SeqCst);
+        let detailed_before = detailed_hits.load(Ordering::SeqCst);
+
+        notify_availability_changed(&recorder);
+        assert_eq!(summary_hits.load(Ordering::SeqCst), summary_before + 1);
+        assert_eq!(detailed_hits.load(Ordering::SeqCst), detailed_before + 1);
+
+        drop(summary);
+        assert!(has_delegate(&recorder));
+        notify_availability_changed(&recorder);
+        assert_eq!(summary_hits.load(Ordering::SeqCst), summary_before + 1);
+        assert_eq!(detailed_hits.load(Ordering::SeqCst), detailed_before + 2);
+
+        drop(detailed);
+        assert!(!has_delegate(&recorder));
+        notify_availability_changed(&recorder);
+        assert_eq!(detailed_hits.load(Ordering::SeqCst), detailed_before + 2);
+    }
+
+    #[test]
+    fn did_stop_recording_reaches_both_observer_kinds() {
+        let _lock = recorder_test_lock();
+        let recorder = ScreenRecorder::shared().expect("shared recorder");
+        let summary_events = Arc::new(Mutex::new(Vec::new()));
+        let detailed_events = Arc::new(Mutex::new(Vec::new()));
+
+        let summary_sink = Arc::clone(&summary_events);
+        let _summary = recorder.observe(move |event| {
+            if let RecordingEvent::DidStopRecording { error } = event {
+                summary_sink.lock().unwrap().push(error);
+            }
+        });
+        let detailed_sink = Arc::clone(&detailed_events);
+        let _detailed = recorder.observe_detailed(move |event| {
+            if let DetailedRecordingEvent::DidStopRecording {
+                preview_view_controller,
+                error,
+            } = event
+            {
+                detailed_sink
+                    .lock()
+                    .unwrap()
+                    .push((preview_view_controller.is_some(), error));
+            }
+        });
+
+        notify_did_stop_recording(&recorder);
+
+        assert_eq!(*summary_events.lock().unwrap(), vec![None]);
+        assert_eq!(*detailed_events.lock().unwrap(), vec![(false, None)]);
+    }
+
+    #[test]
+    fn dropping_an_observer_releases_its_handler() {
+        let _lock = recorder_test_lock();
+        let recorder = ScreenRecorder::shared().expect("shared recorder");
+        let summary_token = Arc::new(());
+        let detailed_token = Arc::new(());
+
+        let held = Arc::clone(&summary_token);
+        let summary = recorder.observe(move |_| {
+            let _ = &held;
+        });
+        let held = Arc::clone(&detailed_token);
+        let detailed = recorder.observe_detailed(move |_| {
+            let _ = &held;
+        });
+        assert_eq!(Arc::strong_count(&summary_token), 2);
+        assert_eq!(Arc::strong_count(&detailed_token), 2);
+
+        drop(summary);
+        drop(detailed);
+        assert_eq!(Arc::strong_count(&summary_token), 1);
+        assert_eq!(Arc::strong_count(&detailed_token), 1);
+    }
+
+    #[test]
+    fn observers_can_be_dropped_while_events_are_in_flight() {
+        let _lock = recorder_test_lock();
+        let recorder = ScreenRecorder::shared().expect("shared recorder");
+        let stop = Arc::new(AtomicBool::new(false));
+        let notifier_stop = Arc::clone(&stop);
+        let notifier = thread::spawn(move || {
+            let recorder = ScreenRecorder::shared().expect("shared recorder");
+            while !notifier_stop.load(Ordering::SeqCst) {
+                notify_availability_changed(&recorder);
+            }
+        });
+
+        let tokens: Vec<Arc<AtomicUsize>> = (0..300)
+            .map(|_| {
+                let (hits, sink) = counter();
+                let observer = recorder.observe_detailed(move |_| {
+                    sink.fetch_add(1, Ordering::SeqCst);
+                });
+                thread::yield_now();
+                drop(observer);
+                hits
+            })
+            .collect();
+
+        stop.store(true, Ordering::SeqCst);
+        notifier.join().expect("notifier thread");
+        assert!(!has_delegate(&recorder));
+        assert!(tokens.iter().all(|hits| Arc::strong_count(hits) == 1));
     }
 }

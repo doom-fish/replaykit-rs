@@ -1,11 +1,11 @@
 use core::ffi::{c_char, c_void};
 
-use crate::ffi;
-use crate::private::{
-    context_release_cb, context_retain_cb, parse_json_ptr, take_string, CallbackBox,
-};
+use doom_fish_utils::callback_context::CallbackContext;
 
-type PreviewHandler = dyn Fn(PreviewEvent) + Send + 'static;
+use crate::ffi;
+use crate::private::{parse_json_ptr, take_string};
+
+type PreviewHandler = Box<dyn Fn(PreviewEvent) + Send + Sync>;
 
 /// Events emitted by `RPPreviewViewControllerDelegate`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,22 +48,20 @@ impl PreviewViewController {
     /// Registers a delegate callback for preview controller events.
     pub fn observe<F>(&self, handler: F) -> PreviewViewControllerObserver
     where
-        F: Fn(PreviewEvent) + Send + 'static,
+        F: Fn(PreviewEvent) + Send + Sync + 'static,
     {
-        let boxed: Box<PreviewHandler> = Box::new(handler);
-        let context = CallbackBox::into_raw(boxed);
-        let refcon = context.cast::<c_void>();
+        let handler: PreviewHandler = Box::new(handler);
+        let context = CallbackContext::new(handler);
         let holder_ptr = unsafe {
             ffi::rk_preview_view_controller_set_delegate(
                 self.ptr,
                 preview_trampoline,
-                refcon,
-                context_retain_cb::<PreviewHandler>,
-                context_release_cb::<PreviewHandler>,
+                context.as_ptr(),
+                CallbackContext::<PreviewHandler>::RETAIN,
+                CallbackContext::<PreviewHandler>::RELEASE,
             )
         };
         PreviewViewControllerObserver {
-            controller_ptr: self.ptr,
             holder_ptr,
             context,
         }
@@ -88,7 +86,7 @@ impl std::fmt::Debug for PreviewViewController {
 }
 
 unsafe extern "C" fn preview_trampoline(
-    refcon: *mut c_void,
+    context: *mut c_void,
     event_kind: i32,
     activity_types_json: *mut c_char,
 ) {
@@ -102,18 +100,19 @@ unsafe extern "C" fn preview_trampoline(
         },
         _ => PreviewEvent::DidFinish,
     };
-    let handler = unsafe { CallbackBox::<PreviewHandler>::handler(refcon.cast()) };
-    doom_fish_utils::panic_safe::catch_user_panic(
-        "replaykit::preview_view::preview_trampoline",
-        || handler(event),
-    );
+    unsafe {
+        CallbackContext::<PreviewHandler>::with(
+            context,
+            "replaykit::preview_view::preview_trampoline",
+            |handler| handler(event),
+        )
+    };
 }
 
 /// RAII guard returned by [`PreviewViewController::observe`].
 pub struct PreviewViewControllerObserver {
-    controller_ptr: *mut c_void,
     holder_ptr: *mut c_void,
-    context: *mut CallbackBox<PreviewHandler>,
+    context: CallbackContext<PreviewHandler>,
 }
 
 unsafe impl Send for PreviewViewControllerObserver {}
@@ -121,13 +120,8 @@ unsafe impl Sync for PreviewViewControllerObserver {}
 
 impl Drop for PreviewViewControllerObserver {
     fn drop(&mut self) {
-        unsafe {
-            ffi::rk_preview_view_controller_clear_delegate(self.controller_ptr, self.holder_ptr);
-            // Release this guard's reference. The Swift holder dropped its own
-            // reference in `deinit` (triggered by `clear_delegate`), so the
-            // `CallbackBox` is freed only once no callback can still run.
-            CallbackBox::release(self.context);
-        }
+        self.context.deactivate();
+        unsafe { ffi::rk_preview_view_controller_clear_delegate(self.holder_ptr) };
     }
 }
 

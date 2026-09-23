@@ -40,13 +40,11 @@ crate-type = ["lib"]
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-doom-fish-utils = { path = "../doom-fish-utils", version = ">=0.3.2, <0.4" }
+doom-fish-utils = { path = "../doom-fish-utils", version = ">=0.4.1, <0.5" }
+apple-cf = { path = "../apple-cf-rs", version = ">=0.11, <0.12", default-features = false, features = ["cm"] }
 
 [dev-dependencies]
 pollster = "0.3"
-# Cap bitflags below 2.12: 2.12+ raises its MSRV above this crate's (1.76),
-# which breaks the test build under the fleet baseline toolchain.
-bitflags = ">=2.0, <2.12"
 
 [features]
 default = []

@@ -3,10 +3,11 @@
 version = 3
 
 [[package]]
-name = "bitflags"
-version = "2.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
+name = "apple-cf"
+version = "0.11.0"
+dependencies = [
+ "doom-fish-utils",
+]
 
 [[package]]
 name = "crossbeam-queue"
@@ -25,7 +26,7 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
 name = "doom-fish-utils"
-version = "0.3.3"
+version = "0.4.1"
 dependencies = [
  "crossbeam-queue",
  "futures-util",
@@ -100,7 +101,7 @@ dependencies = [
 name = "replaykit-rs"
 version = "0.4.2"
 dependencies = [
- "bitflags",
+ "apple-cf",
  "doom-fish-utils",
  "pollster",
  "serde",

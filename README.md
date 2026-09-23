@@ -5,6 +5,15 @@ Safe Rust bindings for Apple's **`ReplayKit`** framework on macOS.
 [![Crates.io](https://img.shields.io/crates/v/replaykit-rs.svg)](https://crates.io/crates/replaykit-rs)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
+## Installation
+
+```toml
+[dependencies]
+replaykit-rs = "0.5"
+```
+
+The library crate is named `replaykit`.
+
 ## Covered areas
 
 - `RPScreenRecorder` state, microphone/camera controls, camera preview access, recording, direct-to-file recording, clip buffering, and typed delegate callbacks; any number of observers share the recorder's single delegate slot

@@ -1,5 +1,50 @@
 # Changelog
 
+All notable changes to `replaykit-rs` will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.5.0] - Unreleased
+
+### Security
+
+- `RecordingObserver` and `DetailedRecordingObserver` freed their handler right after clearing the delegate, so a delegate callback already in flight called freed memory. Every observer now keeps its handler in a `doom_fish_utils` `CallbackContext` that the Swift side releases only after its last callback.
+- Dropping a `BroadcastController` or `PreviewViewController` before its observer no longer hands Swift a dangling controller pointer.
+
+### Fixed
+
+- Observers no longer overwrite each other in `RPScreenRecorder`'s single delegate slot. One multiplexing delegate fans events out to every observer, and dropping an observer removes only that observer.
+- `start_capture` delivers the captured sample buffers instead of per-buffer JSON summaries.
+- A recording, capture, or clip buffering that starts after the 30 s blocking timeout (for example when the consent prompt is approved late) is stopped again, so `TimedOut` always means nothing was started.
+- AppKit objects are no longer touched off the main thread, including from `Debug`.
+
+### Changed
+
+- **Breaking:** `CaptureSample` holds `sample_buffer: apple_cf::cm::CMSampleBuffer` next to `sample_type` and `video_orientation`, replacing the `num_samples`, `data_is_ready`, `presentation_time_seconds`, and `duration_seconds` fields. `CaptureSample` and `CaptureEvent` now derive `Eq`.
+- **Breaking:** Observer handlers (`ScreenRecorder::observe`, `ScreenRecorder::observe_detailed`, `PreviewViewController::observe`, `BroadcastController::observe`) and `SampleBufferDelegate` implementations must be `Send + Sync`.
+- **Breaking:** `CameraPreviewView`, `PreviewViewController`, and `PreviewViewControllerObserver` are `!Send` and `!Sync`. `ScreenRecorder::camera_preview_view`, `CameraPreviewView::is_hidden`, `PreviewViewController::is_view_loaded`, `PreviewViewController::observe`, and `PreviewEventStream::observe` return `Result` and fail with `ReplayKitError::MainThreadRequired` off the main thread. Their `Debug` output only contains the class name.
+- **Breaking:** `ScreenRecorder::stop_recording_with_preview`, `AsyncScreenRecorder::stop_recording`, and `DetailedRecordingEvent::DidStopRecording` return preview controllers as `PreviewViewControllerHandle`.
+- **Breaking:** `BroadcastSampleHandler` is an unsupported placeholder: `is_supported_on_current_platform()` is `false` and `new()` returns `ReplayKitError::NotSupported`, because a broadcast upload extension needs an Objective-C principal class that this crate cannot provide.
+- **Breaking:** `SystemBroadcastPickerView`, `BroadcastConfiguration`, and `BroadcastActivityViewController` are uninhabited enums without `Default`, so their constructors can only return `NotSupported`.
+- Preview handles and AppKit wrappers dropped off the main thread release their object on the main queue.
+- Requires `doom-fish-utils` `>=0.4.1, <0.5` and the new `apple-cf` `>=0.11, <0.12` dependency; `rust-version` is now 1.82.
+
+### Added
+
+- `PreviewViewControllerHandle`, a `Send + Sync` handle whose `to_controller()` opens a `PreviewViewController` on the main thread.
+- `ReplayKitError::MainThreadRequired`.
+- `BroadcastSampleHandler::unsupported_reason()`.
+
+### Removed
+
+- **Breaking:** `BroadcastSampleHandler`'s `Default` impl and its instance methods (`class_name`, `update_service_info`, `update_broadcast_url`, `broadcast_started`, `broadcast_started_with_setup_info`, `broadcast_paused`, `broadcast_resumed`, `broadcast_finished`, `broadcast_annotated_with_application_info`, `finish_broadcast_with_error`). They acted on a standalone handler that ReplayKit never calls.
+- The hidden, never-constructed `AsyncStartCapture` and `AsyncStopCapture` futures and the unused asynchronous capture exports behind them.
+
+## [0.4.2] - 2026-06-06
+
+- Hardened the Swift bridge against use-after-free of observer and capture contexts, and contained Rust panics before they cross the FFI boundary, including in the broadcast-picker completion.
+
 ## [0.4.1] - 2026-05-20
 
 - Migrated local `take_string` body to call `doom_fish_utils::ffi_string::take_owned_cstring_c`. Centralises the duplicated FFI take-string pattern fleet-wide. No public API change.
@@ -33,12 +78,7 @@
 
 - Widen doom-fish-utils version bound to `<0.3` so 0.2.x resolves.
 
-All notable changes to `replaykit-rs` will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
+## [0.3.1] - 2026-05-17
 
 ### Fixed
 

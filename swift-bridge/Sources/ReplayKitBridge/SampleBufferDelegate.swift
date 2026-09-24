@@ -29,10 +29,7 @@ private func rkSampleBufferOrientation(_ sampleBuffer: CMSampleBuffer) -> UInt32
 
 @_cdecl("rk_sample_buffer_delegate_is_supported")
 public func rk_sample_buffer_delegate_is_supported() -> Bool {
-    if #available(macOS 11.0, *) {
-        return true
-    }
-    return false
+    true
 }
 
 /// Owns a +1 reference on the Rust `CallbackContext` for as long as the

@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `ScreenRecorder::stop_recording_with_preview`, `AsyncScreenRecorder::stop_recording`, and `DetailedRecordingEvent::DidStopRecording` return preview controllers as `PreviewViewControllerHandle`.
 - **Breaking:** `BroadcastSampleHandler` is an unsupported placeholder: `is_supported_on_current_platform()` is `false` and `new()` returns `ReplayKitError::NotSupported`, because a broadcast upload extension needs an Objective-C principal class that this crate cannot provide.
 - **Breaking:** `SystemBroadcastPickerView`, `BroadcastConfiguration`, and `BroadcastActivityViewController` are uninhabited enums without `Default`, so their constructors can only return `NotSupported`.
+- **Breaking:** The minimum macOS version is 12.0 (was 11.0). The Swift bridge uses Swift concurrency, which only ships with the OS from macOS 12, so `Package.swift`, the link minimum and the README now say 12.0, and clip buffering lost its pre-12 `NotSupported` path.
 - Preview handles and AppKit wrappers dropped off the main thread release their object on the main queue.
 - Requires `doom-fish-utils` `>=0.4.1, <0.5` and the new `apple-cf` `>=0.11, <0.12` dependency; `rust-version` is now 1.82.
 

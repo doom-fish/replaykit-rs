@@ -32,7 +32,7 @@ The library crate is named `replaykit`.
 
 ## Requirements
 
-- macOS 11.0+ (clip buffering needs macOS 12.0 and returns `NotSupported` on 11)
+- macOS 12.0+
 - Xcode with Swift toolchain installed
 
 ## Permissions and timeouts

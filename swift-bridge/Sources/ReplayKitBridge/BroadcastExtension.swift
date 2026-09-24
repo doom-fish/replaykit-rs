@@ -25,10 +25,7 @@ private func rkBroadcastHandlerUpdateBroadcastURL(
 
 @_cdecl("rk_broadcast_extension_context_is_supported")
 public func rk_broadcast_extension_context_is_supported() -> Bool {
-    if #available(macOS 11.0, *) {
-        return true
-    }
-    return false
+    true
 }
 
 @_cdecl("rk_broadcast_extension_context_new")
@@ -87,10 +84,7 @@ public func rk_broadcast_extension_context_complete_request_with_broadcast_url(
 
 @_cdecl("rk_broadcast_handler_is_supported")
 public func rk_broadcast_handler_is_supported() -> Bool {
-    if #available(macOS 11.0, *) {
-        return true
-    }
-    return false
+    true
 }
 
 @_cdecl("rk_broadcast_handler_new")

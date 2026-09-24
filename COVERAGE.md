@@ -33,9 +33,9 @@ Notes:
 | `-discardRecordingWithHandler:` | ✅ | `ScreenRecorder::discard_recording` | Blocking bridge |
 | `-startCaptureWithHandler:completionHandler:` | ✅ | `ScreenRecorder::start_capture`, `SampleBufferCaptureSession` | Retained `CMSampleBuffer` per video/audio buffer; a capture that starts after the 30 s timeout is stopped |
 | `-stopCaptureWithHandler:` | ✅ | `SampleBufferCaptureSession::stop` / `Drop` | Blocking bridge |
-| `-startClipBufferingWithCompletionHandler:` | ✅ | `ScreenRecorder::start_clip_buffering` | Returns `NotSupported` before macOS 12; stopped again if it starts after the 30 s timeout |
-| `-stopClipBufferingWithCompletionHandler:` | ✅ | `ScreenRecorder::stop_clip_buffering` | Returns `NotSupported` before macOS 12 |
-| `-exportClipToURL:duration:completionHandler:` | ✅ | `ScreenRecorder::export_clip_to_output` | Returns `NotSupported` before macOS 12 |
+| `-startClipBufferingWithCompletionHandler:` | ✅ | `ScreenRecorder::start_clip_buffering` | Stopped again if it starts after the 30 s timeout |
+| `-stopClipBufferingWithCompletionHandler:` | ✅ | `ScreenRecorder::stop_clip_buffering` | |
+| `-exportClipToURL:duration:completionHandler:` | ✅ | `ScreenRecorder::export_clip_to_output` | |
 | `delegate` | ✅ | `ScreenRecorder::observe`, `observe_detailed` | One multiplexing delegate shared by every observer; dropping an observer removes only that observer |
 | `available` | ✅ | `ScreenRecorder::is_available`, `ScreenRecorder::state` | |
 | `recording` | ✅ | `ScreenRecorder::is_recording`, `ScreenRecorder::state` | |

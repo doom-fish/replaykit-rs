@@ -51,10 +51,7 @@ final class RKPreviewDelegateHolder: NSObject, RPPreviewViewControllerDelegate {
 
 @_cdecl("rk_preview_view_controller_is_supported")
 public func rk_preview_view_controller_is_supported() -> Bool {
-    if #available(macOS 11.0, *) {
-        return true
-    }
-    return false
+    true
 }
 
 @_cdecl("rk_preview_view_controller_retain_on_main_thread")

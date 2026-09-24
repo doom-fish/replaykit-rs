@@ -2,7 +2,7 @@
 ///
 /// This example demonstrates how to use the async API to start and stop recording
 /// without blocking the thread. This uses `pollster` to run async code in a sync context.
-/// On macOS 11+, this will attempt to start recording, wait a moment, and then stop.
+/// On macOS 12+, this will attempt to start recording, wait a moment, and then stop.
 #[cfg(feature = "async")]
 fn main() {
     use std::thread;

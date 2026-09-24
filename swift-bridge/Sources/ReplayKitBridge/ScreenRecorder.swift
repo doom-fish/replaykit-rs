@@ -427,12 +427,6 @@ public func rk_screen_recorder_start_clip_buffering(
     _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
 ) -> Int32 {
     let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
-    guard #available(macOS 12.0, *) else {
-        return rkReturnBridgeError(
-            outError,
-            .notSupported("startClipBufferingWithCompletionHandler is unavailable before macOS 12.0")
-        )
-    }
     return rkBlockOnAsync(
         work: {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -457,12 +451,6 @@ public func rk_screen_recorder_stop_clip_buffering(
     _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
 ) -> Int32 {
     let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
-    guard #available(macOS 12.0, *) else {
-        return rkReturnBridgeError(
-            outError,
-            .notSupported("stopClipBufferingWithCompletionHandler is unavailable before macOS 12.0")
-        )
-    }
     return rkBlockOnAsync(
         work: {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -494,12 +482,6 @@ public func rk_screen_recorder_export_clip_to_output_url(
     } catch {
         rkPopulateError(outError, with: error)
         return rkStatus(for: error)
-    }
-    guard #available(macOS 12.0, *) else {
-        return rkReturnBridgeError(
-            outError,
-            .notSupported("exportClipToURL is unavailable before macOS 12.0")
-        )
     }
     return rkBlockOnAsync(
         work: {

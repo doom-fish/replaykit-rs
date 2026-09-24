@@ -63,7 +63,7 @@ fn main() {
 
     println!("cargo:rustc-link-search=native={swift_build_dir}/release");
     println!("cargo:rustc-link-lib=static=ReplayKitBridge");
-    println!("cargo:rustc-link-arg=-mmacosx-version-min=11.0");
+    println!("cargo:rustc-link-arg=-mmacosx-version-min=12.0");
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
 
     if let Ok(output) = Command::new("xcode-select").arg("-p").output() {

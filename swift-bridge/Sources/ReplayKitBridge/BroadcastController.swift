@@ -63,10 +63,7 @@ final class RKBroadcastControllerDelegateHolder: NSObject, RPBroadcastController
 
 @_cdecl("rk_broadcast_controller_is_supported")
 public func rk_broadcast_controller_is_supported() -> Bool {
-    if #available(macOS 11.0, *) {
-        return true
-    }
-    return false
+    true
 }
 
 @_cdecl("rk_broadcast_controller_release")

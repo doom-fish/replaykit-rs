@@ -68,7 +68,7 @@ fn info_plist() -> String {
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>
-  <string>11.0</string>
+  <string>12.0</string>
 </dict>
 </plist>
 "#

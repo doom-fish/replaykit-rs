@@ -20,6 +20,7 @@ mod ffi;
 pub mod preview_view;
 mod private;
 pub mod recorder;
+mod recording_lifecycle;
 pub mod sample_buffer_delegate;
 pub mod screen_recorder;
 pub mod system_broadcast_picker_view;
@@ -38,9 +39,10 @@ pub use broadcast_extension::{
 pub use broadcast_handler::BroadcastHandler;
 pub use broadcast_sample_handler::BroadcastSampleHandler;
 pub use error::{
-    RecordingErrorCode, ReplayKitError, ReplayKitFrameworkError, RP_RECORDING_ERROR_DOMAIN,
-    SC_STREAM_ERROR_DOMAIN,
+    RecorderStateError, RecordingErrorCode, ReplayKitError, ReplayKitFrameworkError,
+    RP_RECORDING_ERROR_DOMAIN, SC_STREAM_ERROR_DOMAIN,
 };
+pub use recording_lifecycle::RecordingPhase;
 pub use preview_view::{
     PreviewEvent, PreviewViewController, PreviewViewControllerHandle, PreviewViewControllerObserver,
 };
@@ -69,9 +71,10 @@ pub mod prelude {
     pub use crate::broadcast_handler::BroadcastHandler;
     pub use crate::broadcast_sample_handler::BroadcastSampleHandler;
     pub use crate::error::{
-        RecordingErrorCode, ReplayKitError, ReplayKitFrameworkError, RP_RECORDING_ERROR_DOMAIN,
-        SC_STREAM_ERROR_DOMAIN,
+        RecorderStateError, RecordingErrorCode, ReplayKitError, ReplayKitFrameworkError,
+        RP_RECORDING_ERROR_DOMAIN, SC_STREAM_ERROR_DOMAIN,
     };
+    pub use crate::recording_lifecycle::RecordingPhase;
     pub use crate::preview_view::{
         PreviewEvent, PreviewViewController, PreviewViewControllerHandle,
         PreviewViewControllerObserver,

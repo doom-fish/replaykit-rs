@@ -279,12 +279,44 @@ public func rk_screen_recorder_state_json(
 
 // MARK: - start / stop recording
 
+private final class RKAbandonedStart {
+    var generation: UInt64 = 0
+}
+
+private let rkAbandonedStartLock = NSLock()
+private var rkAbandonedStartGeneration: UInt64 = 0
+private var rkPendingAbandonedStart: UInt64?
+
+private func rkMarkAbandonedStart() -> UInt64 {
+    rkAbandonedStartLock.lock()
+    defer { rkAbandonedStartLock.unlock() }
+    rkAbandonedStartGeneration &+= 1
+    rkPendingAbandonedStart = rkAbandonedStartGeneration
+    return rkAbandonedStartGeneration
+}
+
+private func rkClearAbandonedStart(_ generation: UInt64) {
+    rkAbandonedStartLock.lock()
+    defer { rkAbandonedStartLock.unlock() }
+    if rkPendingAbandonedStart == generation {
+        rkPendingAbandonedStart = nil
+    }
+}
+
+@_cdecl("rk_screen_recorder_abandoned_start_pending")
+public func rk_screen_recorder_abandoned_start_pending() -> Bool {
+    rkAbandonedStartLock.lock()
+    defer { rkAbandonedStartLock.unlock() }
+    return rkPendingAbandonedStart != nil
+}
+
 @_cdecl("rk_screen_recorder_start_recording")
 public func rk_screen_recorder_start_recording(
     _ ptr: UnsafeMutableRawPointer,
     _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
 ) -> Int32 {
     let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
+    let abandonment = RKAbandonedStart()
     return rkBlockOnAsync(
         work: {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -297,9 +329,24 @@ public func rk_screen_recorder_start_recording(
                 }
             }
         },
-        onLateSuccess: { _ in
-            recorder.stopRecording { _, _ in
-                recorder.discardRecording {}
+        onAbandon: { abandonment.generation = rkMarkAbandonedStart() },
+        onLateOutcome: { outcome in
+            let generation = abandonment.generation
+            guard case .success = outcome else {
+                rkClearAbandonedStart(generation)
+                return
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(30)) {
+                rkClearAbandonedStart(generation)
+            }
+            recorder.stopRecording { _, error in
+                guard error == nil else {
+                    rkClearAbandonedStart(generation)
+                    return
+                }
+                recorder.discardRecording {
+                    rkClearAbandonedStart(generation)
+                }
             }
         },
         onSuccess: { _ in },
@@ -427,7 +474,11 @@ public func rk_screen_recorder_start_clip_buffering(
                 }
             }
         },
-        onLateSuccess: { _ in recorder.stopClipBuffering { _ in } },
+        onLateOutcome: { outcome in
+            if case .success = outcome {
+                recorder.stopClipBuffering { _ in }
+            }
+        },
         onSuccess: { _ in },
         onError: { rkPopulateError(outError, with: $0) }
     )

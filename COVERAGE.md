@@ -27,10 +27,10 @@ Notes:
 | --- | --- | --- | --- |
 | `RPScreenRecorder.sharedRecorder` | ✅ | `ScreenRecorder::shared` | Shared singleton handle |
 | `-startRecordingWithMicrophoneEnabled:handler:` | ⏭️ skipped | — | Unavailable on macOS |
-| `-startRecordingWithHandler:` | ✅ | `ScreenRecorder::start_recording` | Blocking bridge with typed errors; a recording that starts after the 30 s timeout is stopped and discarded |
-| `-stopRecordingWithHandler:` | ✅ | `ScreenRecorder::stop_recording`, `stop_recording_with_preview` | Preserves preview controller when requested |
-| `-stopRecordingWithOutputURL:completionHandler:` | ✅ | `ScreenRecorder::stop_recording_to_output` | macOS 11+ |
-| `-discardRecordingWithHandler:` | ✅ | `ScreenRecorder::discard_recording` | Blocking bridge |
+| `-startRecordingWithHandler:` | ✅ | `ScreenRecorder::start_recording` | Blocking bridge with typed errors; `InvalidState` while recording or while another call runs; a recording that starts after the 30 s timeout is stopped and discarded |
+| `-stopRecordingWithHandler:` | ✅ | `ScreenRecorder::stop_recording`, `stop_recording_with_preview` | Preserves preview controller when requested; `InvalidState(NoRecording)` when nothing is recording; the async future times out after 30 s |
+| `-stopRecordingWithOutputURL:completionHandler:` | ✅ | `ScreenRecorder::stop_recording_to_output` | `InvalidState(NoRecording)` when nothing is recording; the async future times out after 30 s |
+| `-discardRecordingWithHandler:` | ✅ | `ScreenRecorder::discard_recording` | Only after a stop, otherwise `InvalidState`; the async future times out after 30 s |
 | `-startCaptureWithHandler:completionHandler:` | ✅ | `ScreenRecorder::start_capture`, `SampleBufferCaptureSession` | Retained `CMSampleBuffer` per video/audio buffer; a capture that starts after the 30 s timeout is stopped |
 | `-stopCaptureWithHandler:` | ✅ | `SampleBufferCaptureSession::stop` / `Drop` | Blocking bridge |
 | `-startClipBufferingWithCompletionHandler:` | ✅ | `ScreenRecorder::start_clip_buffering` | Stopped again if it starts after the 30 s timeout |

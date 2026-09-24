@@ -37,7 +37,11 @@ The library crate is named `replaykit`.
 
 ## Permissions and timeouts
 
-Starting a recording, a capture, or clip buffering can show the system's screen-recording consent prompt. The blocking wrappers wait up to 30 seconds for `ReplayKit` and then return `ReplayKitError::TimedOut`. If the user approves after that, the crate stops the recording, capture, or clip buffering again, so a timeout always means nothing was started.
+Starting a recording, a capture, or clip buffering can show the system's screen-recording consent prompt. The blocking wrappers wait up to 30 seconds for `ReplayKit` and then return `ReplayKitError::TimedOut`. If the user approves after that, the crate stops the recording, capture, or clip buffering again, so a timeout always means nothing was started. Until such an abandoned start has finished, other recording calls return `InvalidState(OperationInProgress)`.
+
+## Recording lifecycle
+
+Recording calls follow one state machine, reported by `ScreenRecorder::recording_phase()` (`Idle`, `Starting`, `Recording`, `Stopping`, `Stopped`, `Discarding`). A call that is invalid in the current phase returns `ReplayKitError::InvalidState` at once without reaching `ReplayKit`: stopping or discarding with nothing recorded (`NoRecording`), starting or discarding while recording (`RecordingInProgress`), or any call while another start, stop, or discard is still running (`OperationInProgress`). Discarding is only possible after a stop. The phase follows the recorder's `isRecording`, so recordings started or ended outside the crate are picked up. The async stop, stop-to-output, and discard futures always resolve: with the result, an `InvalidState` error, or `TimedOut` after 30 seconds if `ReplayKit` never reports back.
 
 ## Threading
 

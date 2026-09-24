@@ -28,6 +28,34 @@ private func rkCompleteAsync(
     }
 }
 
+private let RKAsyncRecordingTimeoutSeconds = 30
+
+private final class RKBoundedAsyncCall: @unchecked Sendable {
+    private let lock = NSLock()
+    private var callback: RKAsyncCompletion?
+    private let ctx: UnsafeMutableRawPointer
+
+    init(_ callback: @escaping RKAsyncCompletion, _ ctx: UnsafeMutableRawPointer) {
+        self.callback = callback
+        self.ctx = ctx
+        let seconds = RKAsyncRecordingTimeoutSeconds
+        DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(seconds)) { [self] in
+            complete(RKBridgeError.timedOut("ReplayKit did not finish the operation within \(seconds) seconds"))
+        }
+    }
+
+    func complete(_ error: Error?, result: () -> UnsafeRawPointer? = { nil }) {
+        lock.lock()
+        guard let callback else {
+            lock.unlock()
+            return
+        }
+        self.callback = nil
+        lock.unlock()
+        rkCompleteAsync(callback, ctx, error, result: result)
+    }
+}
+
 // MARK: - startRecording async
 
 @_cdecl("rk_screen_recorder_start_recording_async")
@@ -51,8 +79,9 @@ public func rk_screen_recorder_stop_recording_async(
     _ ctx: UnsafeMutableRawPointer
 ) {
     let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
+    let call = RKBoundedAsyncCall(cb, ctx)
     recorder.stopRecording { preview, error in
-        rkCompleteAsync(cb, ctx, error) {
+        call.complete(error) {
             preview.map { UnsafeRawPointer(rk_retain($0)) }
         }
     }
@@ -76,8 +105,9 @@ public func rk_screen_recorder_stop_recording_with_output_async(
         return
     }
 
+    let call = RKBoundedAsyncCall(cb, ctx)
     recorder.stopRecording(withOutput: outputURL) { error in
-        rkCompleteAsync(cb, ctx, error)
+        call.complete(error)
     }
 }
 
@@ -90,7 +120,8 @@ public func rk_screen_recorder_discard_recording_async(
     _ ctx: UnsafeMutableRawPointer
 ) {
     let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
+    let call = RKBoundedAsyncCall(cb, ctx)
     recorder.discardRecording {
-        rkCompleteAsync(cb, ctx, nil)
+        call.complete(nil)
     }
 }

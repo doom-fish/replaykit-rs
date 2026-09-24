@@ -21,6 +21,7 @@ pub enum ReplayKitError {
     /// The feature is not supported on this platform or OS version.
     NotSupported(String),
     MainThreadRequired(String),
+    InvalidState(RecorderStateError),
     /// An underlying `ReplayKit` / Objective-C framework error.
     Framework(ReplayKitFrameworkError),
     /// An error with no further classification.
@@ -35,6 +36,7 @@ impl fmt::Display for ReplayKitError {
             | Self::NotSupported(msg)
             | Self::MainThreadRequired(msg)
             | Self::Unknown(msg) => f.write_str(msg),
+            Self::InvalidState(error) => write!(f, "{error}"),
             Self::Framework(err) => write!(
                 f,
                 "{} (domain={}, code={})",
@@ -45,6 +47,23 @@ impl fmt::Display for ReplayKitError {
 }
 
 impl std::error::Error for ReplayKitError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RecorderStateError {
+    NoRecording,
+    RecordingInProgress,
+    OperationInProgress,
+}
+
+impl fmt::Display for RecorderStateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NoRecording => "there is no recording to stop or discard",
+            Self::RecordingInProgress => "a recording is in progress",
+            Self::OperationInProgress => "another recording operation is still in progress",
+        })
+    }
+}
 
 /// An Objective-C `NSError`-style error from the `ReplayKit` framework.
 #[derive(Debug, Clone, PartialEq, Eq)]

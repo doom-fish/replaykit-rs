@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** Observer handlers (`ScreenRecorder::observe`, `ScreenRecorder::observe_detailed`, `PreviewViewController::observe`, `BroadcastController::observe`) and `SampleBufferDelegate` implementations must be `Send + Sync`.
 - **Breaking:** `CameraPreviewView`, `PreviewViewController`, and `PreviewViewControllerObserver` are `!Send` and `!Sync`. `ScreenRecorder::camera_preview_view`, `CameraPreviewView::is_hidden`, `PreviewViewController::is_view_loaded`, `PreviewViewController::observe`, and `PreviewEventStream::observe` return `Result` and fail with `ReplayKitError::MainThreadRequired` off the main thread. Their `Debug` output only contains the class name.
 - **Breaking:** `RecordingEvent::DidStopRecording` carries `Option<ReplayKitError>` instead of the raw JSON payload string, the `Unknown(String)` variant is gone, and `RecordingEvent` derives `PartialEq` and `Eq`. The lightweight observer receives typed values from Swift instead of JSON matched by substring.
+- **Breaking:** Recording calls go through one state machine. `start_recording`, `stop_recording`, `stop_recording_with_preview`, `stop_recording_to_output`, `discard_recording`, and their `AsyncScreenRecorder` counterparts return `ReplayKitError::InvalidState` (`NoRecording`, `RecordingInProgress`, or `OperationInProgress`) without reaching `ReplayKit` when the call is invalid in the current phase. Discarding without a finished recording used to wait 30 s synchronously and never resolved asynchronously.
+- **Breaking:** The async stop, stop-to-output, and discard futures resolve with `ReplayKitError::TimedOut` after 30 s if `ReplayKit` never reports back; a late completion is ignored.
+- **Breaking:** After a synchronous `start_recording` times out, recording calls return `InvalidState(OperationInProgress)` until the abandoned start has finished and been cleaned up.
 - **Breaking:** `ScreenRecorder::set_camera_position` returns `Result` and rejects `CameraPosition::Unknown` with `InvalidArgument`; it used to hand any raw value to ReplayKit, which stored it. `ScreenRecorder::export_clip_to_output` rejects durations that are not finite and positive before calling ReplayKit.
 - **Breaking:** `ScreenRecorderState` no longer has `has_camera_preview_view`. `state()` runs on any thread, and reading the `NSView`-typed `cameraPreviewView` there touched AppKit off the main thread; call `ScreenRecorder::camera_preview_view()` on the main thread instead.
 - **Breaking:** `ScreenRecorder::stop_recording_with_preview`, `AsyncScreenRecorder::stop_recording`, and `DetailedRecordingEvent::DidStopRecording` return preview controllers as `PreviewViewControllerHandle`.
@@ -44,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `PreviewViewControllerHandle`, a `Send + Sync` handle whose `to_controller()` opens a `PreviewViewController` on the main thread.
 - `ReplayKitError::MainThreadRequired`.
+- `ReplayKitError::InvalidState`, `RecorderStateError`, `RecordingPhase`, and `ScreenRecorder::recording_phase()`.
 - `BroadcastExtensionContext::from_raw_borrowed`, `BroadcastHandler::from_raw_borrowed`, `BroadcastSampleHandler::from_raw_borrowed`, and `BroadcastSampleHandler::as_handler`.
 
 ### Removed

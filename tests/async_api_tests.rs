@@ -3,7 +3,7 @@
 use std::{
     panic::{self, AssertUnwindSafe},
     sync::mpsc::{self, RecvTimeoutError},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use replaykit::async_api::AsyncScreenRecorder;
@@ -41,13 +41,37 @@ fn stopping_without_a_recording_fails_the_same_way_in_both_bridges() {
                 .expect_err("stopping without a recording must fail");
 
             assert_eq!(async_error, sync_error);
-            let ReplayKitError::Framework(error) = async_error else {
-                panic!("expected a framework error, got {async_error:?}");
-            };
             assert_eq!(
-                error.recording_code(),
-                Some(RecordingErrorCode::AttemptToStopNonRecording)
+                async_error,
+                ReplayKitError::InvalidState(RecorderStateError::NoRecording)
             );
+        },
+    );
+}
+
+#[test]
+fn discarding_without_a_finished_recording_resolves_immediately() {
+    run_async_case(
+        "discarding_without_a_finished_recording_resolves_immediately",
+        || {
+            let recorder = ScreenRecorder::shared().expect("shared recorder");
+            let started = Instant::now();
+
+            let no_recording = ReplayKitError::InvalidState(RecorderStateError::NoRecording);
+            assert_eq!(recorder.discard_recording(), Err(no_recording.clone()));
+            assert_eq!(
+                pollster::block_on(AsyncScreenRecorder::discard_recording(&recorder)),
+                Err(no_recording.clone())
+            );
+            assert_eq!(
+                pollster::block_on(AsyncScreenRecorder::stop_recording_with_output(
+                    &recorder,
+                    "target/never-written.mov",
+                )),
+                Err(no_recording)
+            );
+            assert!(started.elapsed() < Duration::from_secs(5));
+            assert_eq!(recorder.recording_phase(), RecordingPhase::Idle);
         },
     );
 }

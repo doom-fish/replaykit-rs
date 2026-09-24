@@ -11,6 +11,7 @@ use crate::error::ReplayKitError;
 use crate::ffi;
 use crate::preview_view::PreviewViewControllerHandle;
 use crate::private::{error_from_status, parse_json_ptr, path_cstring, result_from_status};
+use crate::recording_lifecycle::{self, RecordingOperation};
 
 type RecordingHandler = Box<dyn Fn(RecordingEvent) + Send + Sync>;
 type DetailedRecordingHandler = Box<dyn Fn(DetailedRecordingEvent) + Send + Sync>;
@@ -209,9 +210,12 @@ impl ScreenRecorder {
 
     /// Starts a recording session.
     pub fn start_recording(&self) -> Result<(), ReplayKitError> {
+        recording_lifecycle::begin(self, RecordingOperation::Start)?;
         let mut err: *mut c_char = ptr::null_mut();
         let rc = unsafe { ffi::rk_screen_recorder_start_recording(self.ptr, &raw mut err) };
-        result_from_status(rc, err)
+        let result = result_from_status(rc, err);
+        recording_lifecycle::finish(RecordingOperation::Start, result.as_ref().copied());
+        result
     }
 
     /// Stops the active recording session and discards any returned preview controller.
@@ -223,6 +227,7 @@ impl ScreenRecorder {
     pub fn stop_recording_with_preview(
         &self,
     ) -> Result<Option<PreviewViewControllerHandle>, ReplayKitError> {
+        recording_lifecycle::begin(self, RecordingOperation::Stop)?;
         let mut err: *mut c_char = ptr::null_mut();
         let mut preview_ptr: *mut c_void = ptr::null_mut();
         let rc = unsafe {
@@ -233,11 +238,13 @@ impl ScreenRecorder {
             )
         };
         let preview = unsafe { PreviewViewControllerHandle::from_raw(preview_ptr) };
-        if rc == crate::ffi::status::OK {
+        let result = if rc == crate::ffi::status::OK {
             Ok(preview)
         } else {
             Err(unsafe { error_from_status(rc, err) })
-        }
+        };
+        recording_lifecycle::finish(RecordingOperation::Stop, result.as_ref().map(|_| ()));
+        result
     }
 
     /// Stops recording and writes the movie directly to the supplied output path.
@@ -246,6 +253,7 @@ impl ScreenRecorder {
         output_path: P,
     ) -> Result<(), ReplayKitError> {
         let output_path = path_cstring(output_path.as_ref(), "recording output path")?;
+        recording_lifecycle::begin(self, RecordingOperation::StopToOutput)?;
         let mut err: *mut c_char = ptr::null_mut();
         let rc = unsafe {
             ffi::rk_screen_recorder_stop_recording_with_output_url(
@@ -254,14 +262,19 @@ impl ScreenRecorder {
                 &raw mut err,
             )
         };
-        result_from_status(rc, err)
+        let result = result_from_status(rc, err);
+        recording_lifecycle::finish(RecordingOperation::StopToOutput, result.as_ref().copied());
+        result
     }
 
     /// Discards the current recording after `ReplayKit` has finished stopping it.
     pub fn discard_recording(&self) -> Result<(), ReplayKitError> {
+        recording_lifecycle::begin(self, RecordingOperation::Discard)?;
         let mut err: *mut c_char = ptr::null_mut();
         let rc = unsafe { ffi::rk_screen_recorder_discard_recording(self.ptr, &raw mut err) };
-        result_from_status(rc, err)
+        let result = result_from_status(rc, err);
+        recording_lifecycle::finish(RecordingOperation::Discard, result.as_ref().copied());
+        result
     }
 
     /// Starts clip buffering on macOS 12+.

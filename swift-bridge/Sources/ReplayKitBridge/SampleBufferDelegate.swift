@@ -103,7 +103,11 @@ public func rk_screen_recorder_start_capture(
                 }
             }
         },
-        onLateSuccess: { _ in recorder.stopCapture { _ in } },
+        onLateOutcome: { outcome in
+            if case .success = outcome {
+                recorder.stopCapture { _ in }
+            }
+        },
         onSuccess: { _ in },
         onError: { rkPopulateError(outError, with: $0) }
     )

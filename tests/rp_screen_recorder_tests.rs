@@ -1,4 +1,4 @@
-use replaykit::{CameraPosition, ReplayKitError, ScreenRecorder};
+use replaykit::{CameraPosition, RecorderStateError, RecordingPhase, ReplayKitError, ScreenRecorder};
 
 #[test]
 fn camera_position_raw_values_are_stable() {
@@ -20,6 +20,27 @@ fn shared_recorder_exposes_consistent_state() {
         recorder.is_microphone_enabled()
     );
     assert_eq!(state.is_camera_enabled, recorder.is_camera_enabled());
+}
+
+#[test]
+fn an_idle_recorder_rejects_stop_and_discard() {
+    let recorder =
+        ScreenRecorder::shared().expect("RPScreenRecorder.shared() should exist on macOS");
+    assert_eq!(recorder.recording_phase(), RecordingPhase::Idle);
+
+    let no_recording = ReplayKitError::InvalidState(RecorderStateError::NoRecording);
+    assert_eq!(recorder.stop_recording(), Err(no_recording.clone()));
+    assert!(matches!(
+        recorder.stop_recording_with_preview(),
+        Err(ReplayKitError::InvalidState(RecorderStateError::NoRecording))
+    ));
+    assert_eq!(
+        recorder.stop_recording_to_output("target/never-written.mov"),
+        Err(no_recording.clone())
+    );
+    assert_eq!(recorder.discard_recording(), Err(no_recording));
+    assert_eq!(recorder.recording_phase(), RecordingPhase::Idle);
+    assert!(!std::path::Path::new("target/never-written.mov").exists());
 }
 
 #[test]

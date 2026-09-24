@@ -19,6 +19,7 @@ extern "C" {
     ) -> i32;
 
     pub fn rk_screen_recorder_state_json(ptr: *mut c_void) -> *mut c_char;
+    pub fn rk_screen_recorder_abandoned_start_pending() -> bool;
 
     pub fn rk_screen_recorder_start_recording(ptr: *mut c_void, out_error: *mut *mut c_char)
         -> i32;

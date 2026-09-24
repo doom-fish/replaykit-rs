@@ -281,13 +281,15 @@ func rkDictionaryFromJSON(
 private final class RKBlockingCall<T>: @unchecked Sendable {
     private let lock = NSLock()
     private let semaphore = DispatchSemaphore(value: 0)
-    private let onLateSuccess: ((T) -> Void)?
+    private let onAbandon: (() -> Void)?
+    private let onLateOutcome: ((Result<T, Error>) -> Void)?
     private var outcome: Result<T, Error>?
     private var finished = false
     private var abandoned = false
 
-    init(onLateSuccess: ((T) -> Void)?) {
-        self.onLateSuccess = onLateSuccess
+    init(onAbandon: (() -> Void)?, onLateOutcome: ((Result<T, Error>) -> Void)?) {
+        self.onAbandon = onAbandon
+        self.onLateOutcome = onLateOutcome
     }
 
     func finish(_ result: Result<T, Error>) {
@@ -299,9 +301,7 @@ private final class RKBlockingCall<T>: @unchecked Sendable {
         finished = true
         guard !abandoned else {
             lock.unlock()
-            if case .success(let value) = result {
-                onLateSuccess?(value)
-            }
+            onLateOutcome?(result)
             return
         }
         outcome = result
@@ -315,6 +315,7 @@ private final class RKBlockingCall<T>: @unchecked Sendable {
         defer { lock.unlock() }
         if outcome == nil {
             abandoned = true
+            onAbandon?()
         }
         return outcome
     }
@@ -323,11 +324,12 @@ private final class RKBlockingCall<T>: @unchecked Sendable {
 func rkBlockOnAsync<T>(
     timeoutSeconds: Int = 30,
     work: @escaping () async throws -> T,
-    onLateSuccess: ((T) -> Void)? = nil,
+    onAbandon: (() -> Void)? = nil,
+    onLateOutcome: ((Result<T, Error>) -> Void)? = nil,
     onSuccess: (T) -> Void,
     onError: (Error) -> Void
 ) -> Int32 {
-    let call = RKBlockingCall<T>(onLateSuccess: onLateSuccess)
+    let call = RKBlockingCall<T>(onAbandon: onAbandon, onLateOutcome: onLateOutcome)
     let task = Task {
         do {
             call.finish(.success(try await work()))

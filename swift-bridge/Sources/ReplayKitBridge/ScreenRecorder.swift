@@ -12,12 +12,6 @@ struct RKRecorderStatePayload: Encodable {
     let cameraPosition: Int
 }
 
-struct RKRecordingErrorPayload: Encodable {
-    let domain: String
-    let code: Int
-    let localizedDescription: String
-}
-
 private let RKScreenRecorderAvailabilityChangedEvent: Int32 = 1
 private let RKScreenRecorderDidStopRecordingEvent: Int32 = 2
 
@@ -25,7 +19,9 @@ private let RKScreenRecorderDidStopRecordingEvent: Int32 = 2
 
 public typealias RKRecorderSummaryCallback = @convention(c) (
     UnsafeMutableRawPointer?,
-    UnsafePointer<CChar>?
+    Int32,
+    Bool,
+    UnsafeMutablePointer<CChar>?
 ) -> Void
 
 public typealias RKRecorderDetailedCallback = @convention(c) (
@@ -39,21 +35,6 @@ public typealias RKRecorderDetailedCallback = @convention(c) (
 private enum RKRecorderObserverCallback {
     case summary(RKRecorderSummaryCallback)
     case detailed(RKRecorderDetailedCallback)
-}
-
-private func rkRecordingSummaryStopPayload(_ error: Error?) -> String {
-    guard let error else {
-        return #"{"kind":"didStopRecording","error":null}"#
-    }
-    let ns = error as NSError
-    let inner = RKRecordingErrorPayload(
-        domain: ns.domain,
-        code: ns.code,
-        localizedDescription: ns.localizedDescription
-    )
-    return (try? rkEncodeJSON(["kind": "didStopRecording",
-                               "error": rkEncodeJSON(inner)])) ??
-        #"{"kind":"didStopRecording"}"#
 }
 
 private final class RKRecorderObserver {
@@ -84,7 +65,12 @@ private final class RKRecorderObserver {
     ) {
         switch callback {
         case .summary(let summary):
-            rkRecordingSummaryStopPayload(error).withCString { summary(context, $0) }
+            summary(
+                context,
+                RKScreenRecorderDidStopRecordingEvent,
+                screenRecorder.isAvailable,
+                error.flatMap(rkOwnedErrorCString)
+            )
         case .detailed(let detailed):
             detailed(
                 context,
@@ -99,8 +85,12 @@ private final class RKRecorderObserver {
     func availabilityChanged(_ screenRecorder: RPScreenRecorder) {
         switch callback {
         case .summary(let summary):
-            let payload = #"{"kind":"availabilityChanged","isAvailable":\#(screenRecorder.isAvailable)}"#
-            payload.withCString { summary(context, $0) }
+            summary(
+                context,
+                RKScreenRecorderAvailabilityChangedEvent,
+                screenRecorder.isAvailable,
+                nil
+            )
         case .detailed(let detailed):
             detailed(
                 context,

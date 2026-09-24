@@ -16,14 +16,12 @@ type RecordingHandler = Box<dyn Fn(RecordingEvent) + Send + Sync>;
 type DetailedRecordingHandler = Box<dyn Fn(DetailedRecordingEvent) + Send + Sync>;
 
 /// Events forwarded by the lightweight `RPScreenRecorderDelegate` bridge.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecordingEvent {
     /// Recording stopped (possibly with an error).
-    DidStopRecording { error: Option<String> },
+    DidStopRecording { error: Option<ReplayKitError> },
     /// The recorder's availability changed.
     AvailabilityChanged { is_available: bool },
-    /// An unrecognised event payload.
-    Unknown(String),
 }
 
 /// Detailed events forwarded by `RPScreenRecorderDelegate`.
@@ -352,35 +350,40 @@ impl std::fmt::Debug for ScreenRecorder {
     }
 }
 
-fn parse_event(json_ptr: *const c_char) -> RecordingEvent {
-    if json_ptr.is_null() {
-        return RecordingEvent::Unknown("(null event)".into());
+unsafe fn recording_error(error_json: *mut c_char) -> Option<ReplayKitError> {
+    if error_json.is_null() {
+        return None;
     }
-    let json = unsafe { std::ffi::CStr::from_ptr(json_ptr) }
-        .to_string_lossy()
-        .into_owned();
-
-    if json.contains("\"availabilityChanged\"") {
-        let is_available = json.contains("\"isAvailable\":true");
-        RecordingEvent::AvailabilityChanged { is_available }
-    } else if json.contains("\"didStopRecording\"") {
-        let error = if json.contains("\"error\":null") {
-            None
-        } else {
-            Some(json)
-        };
-        RecordingEvent::DidStopRecording { error }
-    } else {
-        RecordingEvent::Unknown(json)
-    }
+    let message = unsafe { crate::private::take_string(error_json) }
+        .unwrap_or_else(|| "recording delegate error".into());
+    Some(crate::error::from_message(&message))
 }
 
-unsafe extern "C" fn summary_trampoline(context: *mut c_void, event_json: *const c_char) {
+fn unknown_event_kind(event_kind: i32) -> ReplayKitError {
+    ReplayKitError::Unknown(format!(
+        "unknown recording delegate event kind: {event_kind}"
+    ))
+}
+
+unsafe extern "C" fn summary_trampoline(
+    context: *mut c_void,
+    event_kind: i32,
+    is_available: bool,
+    error_json: *mut c_char,
+) {
+    let error = unsafe { recording_error(error_json) };
+    let event = match event_kind {
+        1 => RecordingEvent::AvailabilityChanged { is_available },
+        2 => RecordingEvent::DidStopRecording { error },
+        other => RecordingEvent::DidStopRecording {
+            error: Some(unknown_event_kind(other)),
+        },
+    };
     unsafe {
         CallbackContext::<RecordingHandler>::with(
             context,
             "replaykit::screen_recorder::summary_trampoline",
-            |handler| handler(parse_event(event_json)),
+            |handler| handler(event),
         )
     };
 }
@@ -394,24 +397,16 @@ unsafe extern "C" fn detailed_trampoline(
 ) {
     let preview_view_controller =
         unsafe { PreviewViewControllerHandle::from_raw(preview_controller_ptr) };
-    let error = if error_json.is_null() {
-        None
-    } else {
-        let message = unsafe { crate::private::take_string(error_json) }
-            .unwrap_or_else(|| "recording delegate error".into());
-        Some(crate::error::from_message(&message))
-    };
+    let error = unsafe { recording_error(error_json) };
     let event = match event_kind {
         1 => DetailedRecordingEvent::AvailabilityChanged { is_available },
         2 => DetailedRecordingEvent::DidStopRecording {
             preview_view_controller,
             error,
         },
-        _ => DetailedRecordingEvent::DidStopRecording {
+        other => DetailedRecordingEvent::DidStopRecording {
             preview_view_controller,
-            error: Some(ReplayKitError::Unknown(format!(
-                "unknown recording delegate event kind: {event_kind}"
-            ))),
+            error: Some(unknown_event_kind(other)),
         },
     };
     unsafe {
@@ -506,13 +501,50 @@ mod tests {
     use std::thread;
 
     use super::{DetailedRecordingEvent, RecordingEvent, ScreenRecorder};
+    use crate::error::{RecordingErrorCode, ReplayKitError, RP_RECORDING_ERROR_DOMAIN};
     use crate::private::recorder_test_lock;
 
     extern "C" {
         fn sel_registerName(name: *const c_char) -> *mut c_void;
+        fn objc_getClass(name: *const c_char) -> *mut c_void;
         fn objc_msgSend();
         fn objc_autoreleasePoolPush() -> *mut c_void;
         fn objc_autoreleasePoolPop(pool: *mut c_void);
+        fn CFStringCreateWithCString(
+            allocator: *const c_void,
+            value: *const c_char,
+            encoding: u32,
+        ) -> *mut c_void;
+        fn CFRelease(value: *const c_void);
+    }
+
+    fn recording_error(code: isize) -> *mut c_void {
+        let domain = std::ffi::CString::new(RP_RECORDING_ERROR_DOMAIN).expect("domain");
+        let domain =
+            unsafe { CFStringCreateWithCString(std::ptr::null(), domain.as_ptr(), 0x0800_0100) };
+        let send = unsafe {
+            std::mem::transmute::<
+                unsafe extern "C" fn(),
+                unsafe extern "C" fn(
+                    *mut c_void,
+                    *mut c_void,
+                    *mut c_void,
+                    isize,
+                    *mut c_void,
+                ) -> *mut c_void,
+            >(objc_msgSend)
+        };
+        let error = unsafe {
+            send(
+                objc_getClass(c"NSError".as_ptr()),
+                sel_registerName(c"errorWithDomain:code:userInfo:".as_ptr()),
+                domain,
+                code,
+                std::ptr::null_mut(),
+            )
+        };
+        unsafe { CFRelease(domain) };
+        error
     }
 
     fn with_autorelease_pool<R>(body: impl FnOnce() -> R) -> R {
@@ -558,7 +590,7 @@ mod tests {
         });
     }
 
-    fn notify_did_stop_recording(recorder: &ScreenRecorder) {
+    fn notify_did_stop_recording(recorder: &ScreenRecorder, error: *mut c_void) {
         with_autorelease_pool(|| {
             let delegate = recorder_delegate(recorder);
             if delegate.is_null() {
@@ -584,7 +616,7 @@ mod tests {
                     ),
                     recorder.as_ptr(),
                     std::ptr::null_mut(),
-                    std::ptr::null_mut(),
+                    error,
                 );
             }
         });
@@ -659,10 +691,43 @@ mod tests {
             }
         });
 
-        notify_did_stop_recording(&recorder);
+        notify_did_stop_recording(&recorder, std::ptr::null_mut());
 
         assert_eq!(*summary_events.lock().unwrap(), vec![None]);
         assert_eq!(*detailed_events.lock().unwrap(), vec![(false, None)]);
+    }
+
+    #[test]
+    fn did_stop_recording_errors_are_typed_for_both_observer_kinds() {
+        let _lock = recorder_test_lock();
+        let recorder = ScreenRecorder::shared().expect("shared recorder");
+        let summary_errors = Arc::new(Mutex::new(Vec::new()));
+        let detailed_errors = Arc::new(Mutex::new(Vec::new()));
+
+        let summary_sink = Arc::clone(&summary_errors);
+        let _summary = recorder.observe(move |event| {
+            if let RecordingEvent::DidStopRecording { error } = event {
+                summary_sink.lock().unwrap().push(error);
+            }
+        });
+        let detailed_sink = Arc::clone(&detailed_errors);
+        let _detailed = recorder.observe_detailed(move |event| {
+            if let DetailedRecordingEvent::DidStopRecording { error, .. } = event {
+                detailed_sink.lock().unwrap().push(error);
+            }
+        });
+
+        with_autorelease_pool(|| notify_did_stop_recording(&recorder, recording_error(-5804)));
+
+        let summary = std::mem::take(&mut *summary_errors.lock().unwrap());
+        let detailed = std::mem::take(&mut *detailed_errors.lock().unwrap());
+        assert_eq!(summary, detailed);
+        assert_eq!(summary.len(), 1);
+        let Some(ReplayKitError::Framework(error)) = &summary[0] else {
+            panic!("expected a framework error, got {:?}", summary[0]);
+        };
+        assert_eq!(error.domain, RP_RECORDING_ERROR_DOMAIN);
+        assert_eq!(error.recording_code(), Some(RecordingErrorCode::Failed));
     }
 
     #[test]

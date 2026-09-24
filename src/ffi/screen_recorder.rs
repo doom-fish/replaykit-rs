@@ -54,7 +54,7 @@ extern "C" {
 
     pub fn rk_screen_recorder_add_summary_observer(
         recorder_ptr: *mut c_void,
-        callback: unsafe extern "C" fn(*mut c_void, *const c_char),
+        callback: unsafe extern "C" fn(*mut c_void, i32, bool, *mut c_char),
         context: *mut c_void,
         context_retain: unsafe extern "C" fn(*mut c_void),
         context_release: unsafe extern "C" fn(*mut c_void),

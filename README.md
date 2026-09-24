@@ -77,7 +77,7 @@ See [`COVERAGE.md`](COVERAGE.md) for the API-by-API matrix against the Apple SDK
 
 ## Safety
 
-All public APIs are safe Rust. The Swift bridge uses `strdup`/`free`-paired C strings and reference-counted opaque pointers; no raw memory is exposed through the public interface.
+All public APIs are safe Rust except the three `from_raw_borrowed` constructors: they take an Objective-C object pointer from code running inside a broadcast extension, and the caller must pass a live object (the class itself is checked). The Swift bridge uses `strdup`/`free`-paired C strings and reference-counted opaque pointers; no raw memory is exposed through the public interface.
 
 ## License
 

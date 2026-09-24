@@ -36,6 +36,7 @@
 
 use core::ffi::{c_char, c_void};
 use std::future::{self, Future};
+use std::path::Path;
 use std::pin::Pin;
 use std::ptr;
 use std::task::{Context, Poll};
@@ -48,10 +49,10 @@ use crate::ffi;
 use crate::preview_view::{
     PreviewEvent, PreviewViewController, PreviewViewControllerHandle, PreviewViewControllerObserver,
 };
-use crate::private::{cstring_from_str, take_string};
+use crate::private::{cstring_from_str, path_cstring, result_from_status, take_string};
 use crate::sample_buffer_delegate::{CaptureEvent, SampleBufferCaptureSession};
 use crate::screen_recorder::{DetailedRecordingEvent, DetailedRecordingObserver, ScreenRecorder};
-use doom_fish_utils::completion::{error_from_cstr, AsyncCompletion, AsyncCompletionFuture};
+use doom_fish_utils::completion::{AsyncCompletion, AsyncCompletionFuture};
 use doom_fish_utils::panic_safe::catch_user_panic;
 use doom_fish_utils::stream::{BoundedAsyncStream, NextItem};
 
@@ -59,41 +60,45 @@ use doom_fish_utils::stream::{BoundedAsyncStream, NextItem};
 // Callback helpers
 // ============================================================================
 
-extern "C" fn void_callback(_result: *const c_void, error: *const i8, user_data: *mut c_void) {
+type RecordingCompletion<T> = AsyncCompletionFuture<Result<T, ReplayKitError>>;
+
+fn flatten_completion<T>(
+    result: Result<Result<T, ReplayKitError>, String>,
+) -> Result<T, ReplayKitError> {
+    result.map_err(ReplayKitError::Unknown).and_then(std::convert::identity)
+}
+
+extern "C" fn void_callback(
+    _result: *const c_void,
+    status: i32,
+    error: *mut c_char,
+    user_data: *mut c_void,
+) {
     catch_user_panic("replaykit::async_api::void_callback", || {
-        if error.is_null() {
-            // SAFETY: user_data comes from AsyncCompletion::create() and the Swift
-            // bridge calls the completion at most once.
-            unsafe { AsyncCompletion::<()>::complete_ok(user_data, ()) };
-        } else {
-            // SAFETY: error is a valid C string supplied by the Swift bridge.
-            let message = unsafe { error_from_cstr(error) };
-            // SAFETY: user_data comes from AsyncCompletion::create() and the Swift
-            // bridge calls the completion at most once.
-            unsafe { AsyncCompletion::<()>::complete_err(user_data, message) };
-        }
+        let outcome = result_from_status(status, error);
+        // SAFETY: user_data comes from AsyncCompletion::create() and the Swift
+        // bridge calls the completion at most once.
+        unsafe { AsyncCompletion::<Result<(), ReplayKitError>>::complete_ok(user_data, outcome) };
     });
 }
 
-extern "C" fn preview_callback(result: *const c_void, error: *const i8, user_data: *mut c_void) {
+extern "C" fn preview_callback(
+    result: *const c_void,
+    status: i32,
+    error: *mut c_char,
+    user_data: *mut c_void,
+) {
     catch_user_panic("replaykit::async_api::preview_callback", || {
-        if error.is_null() {
-            // SAFETY: a non-null result is a retained `RPPreviewViewController` supplied
-            // by the Swift bridge for this completion.
-            let preview = unsafe { PreviewViewControllerHandle::from_raw(result.cast_mut()) };
-            // SAFETY: user_data comes from AsyncCompletion::create() and the Swift
-            // bridge calls the completion at most once.
-            unsafe { AsyncCompletion::complete_ok(user_data, preview) };
-        } else {
-            // SAFETY: error is a valid C string supplied by the Swift bridge.
-            let message = unsafe { error_from_cstr(error) };
-            // SAFETY: user_data comes from AsyncCompletion::create() and the Swift
-            // bridge calls the completion at most once.
-            unsafe {
-                AsyncCompletion::<Option<PreviewViewControllerHandle>>::complete_err(
-                    user_data, message,
-                );
-            }
+        // SAFETY: a non-null result is a retained `RPPreviewViewController` supplied
+        // by the Swift bridge for this completion.
+        let preview = unsafe { PreviewViewControllerHandle::from_raw(result.cast_mut()) };
+        let outcome = result_from_status(status, error).map(|()| preview);
+        // SAFETY: user_data comes from AsyncCompletion::create() and the Swift
+        // bridge calls the completion at most once.
+        unsafe {
+            AsyncCompletion::<Result<Option<PreviewViewControllerHandle>, ReplayKitError>>::complete_ok(
+                user_data, outcome,
+            );
         }
     });
 }
@@ -165,85 +170,63 @@ impl Future for AsyncShowBroadcastActivity {
 
 /// Future for async start recording operation.
 pub struct AsyncStartRecording {
-    inner: AsyncCompletionFuture<()>,
+    inner: RecordingCompletion<()>,
 }
-
-// SAFETY: `AsyncStartRecording` wraps an `AsyncCompletionFuture<()>`, which is safe
-// to move between threads.
-unsafe impl Send for AsyncStartRecording {}
-// SAFETY: see `Send` above.
-unsafe impl Sync for AsyncStartRecording {}
 
 impl Future for AsyncStartRecording {
     type Output = Result<(), ReplayKitError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.inner)
-            .poll(cx)
-            .map(|result| result.map_err(ReplayKitError::Unknown))
+        Pin::new(&mut self.inner).poll(cx).map(flatten_completion)
     }
 }
 
 /// Future for async stop recording operation (optionally returns a preview controller).
 pub struct AsyncStopRecording {
-    inner: AsyncCompletionFuture<Option<PreviewViewControllerHandle>>,
+    inner: RecordingCompletion<Option<PreviewViewControllerHandle>>,
 }
-
-// SAFETY: `AsyncStopRecording` wraps an `AsyncCompletionFuture` carrying a retained
-// `PreviewViewControllerHandle`, which is `Send + Sync`.
-unsafe impl Send for AsyncStopRecording {}
-// SAFETY: see `Send` above.
-unsafe impl Sync for AsyncStopRecording {}
 
 impl Future for AsyncStopRecording {
     type Output = Result<Option<PreviewViewControllerHandle>, ReplayKitError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.inner)
-            .poll(cx)
-            .map(|result| result.map_err(ReplayKitError::Unknown))
+        Pin::new(&mut self.inner).poll(cx).map(flatten_completion)
     }
+}
+
+enum AsyncStopRecordingWithOutputInner {
+    Pending(RecordingCompletion<()>),
+    Ready(future::Ready<Result<(), ReplayKitError>>),
 }
 
 /// Future for async stop recording with file output.
 pub struct AsyncStopRecordingWithOutput {
-    inner: AsyncCompletionFuture<()>,
+    inner: AsyncStopRecordingWithOutputInner,
 }
-
-// SAFETY: `AsyncStopRecordingWithOutput` wraps an `AsyncCompletionFuture<()>`, which
-// is safe to move between threads.
-unsafe impl Send for AsyncStopRecordingWithOutput {}
-// SAFETY: see `Send` above.
-unsafe impl Sync for AsyncStopRecordingWithOutput {}
 
 impl Future for AsyncStopRecordingWithOutput {
     type Output = Result<(), ReplayKitError>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.inner)
-            .poll(cx)
-            .map(|result| result.map_err(ReplayKitError::Unknown))
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match &mut self.get_mut().inner {
+            AsyncStopRecordingWithOutputInner::Pending(future) => {
+                Pin::new(future).poll(cx).map(flatten_completion)
+            }
+            AsyncStopRecordingWithOutputInner::Ready(future) => Pin::new(future).poll(cx),
+        }
     }
 }
 
 /// Future for async discard recording operation.
 pub struct AsyncDiscardRecording {
-    inner: AsyncCompletionFuture<()>,
+    inner: RecordingCompletion<()>,
 }
-
-// SAFETY: `AsyncDiscardRecording` wraps an `AsyncCompletionFuture<()>`, which is
-// safe to move between threads.
-unsafe impl Send for AsyncDiscardRecording {}
-// SAFETY: see `Send` above.
-unsafe impl Sync for AsyncDiscardRecording {}
 
 impl Future for AsyncDiscardRecording {
     type Output = Result<(), ReplayKitError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.inner)
-            .poll(cx)
-            .map(|result| result.map_err(ReplayKitError::Unknown))
+        Pin::new(&mut self.inner).poll(cx).map(flatten_completion)
     }
 }
 
@@ -547,10 +530,18 @@ impl AsyncScreenRecorder {
 
     /// Stop recording asynchronously and write to `output_path`.
     #[must_use = "futures do nothing unless awaited"]
-    pub fn stop_recording_with_output(
+    pub fn stop_recording_with_output<P: AsRef<Path>>(
         recorder: &ScreenRecorder,
-        output_path: &std::ffi::CStr,
+        output_path: P,
     ) -> AsyncStopRecordingWithOutput {
+        let output_path = match path_cstring(output_path.as_ref(), "recording output path") {
+            Ok(output_path) => output_path,
+            Err(error) => {
+                return AsyncStopRecordingWithOutput {
+                    inner: AsyncStopRecordingWithOutputInner::Ready(future::ready(Err(error))),
+                }
+            }
+        };
         let (future, ctx) = AsyncCompletion::create();
         // SAFETY: `recorder.as_ptr()` is a valid `RPScreenRecorder` pointer,
         // `output_path` is a valid C string, and `ctx` comes from
@@ -563,7 +554,9 @@ impl AsyncScreenRecorder {
                 ctx,
             );
         }
-        AsyncStopRecordingWithOutput { inner: future }
+        AsyncStopRecordingWithOutput {
+            inner: AsyncStopRecordingWithOutputInner::Pending(future),
+        }
     }
 
     /// Discard the current recording asynchronously.
@@ -603,12 +596,122 @@ impl AsyncScreenRecorder {
 
 #[cfg(test)]
 mod tests {
+    use core::ffi::c_char;
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Path;
+    use std::ptr;
+
+    use doom_fish_utils::completion::AsyncCompletion;
+
     use super::{
-        AsyncBroadcastActivityControllerHandle, AsyncScreenRecorder, SampleBufferCaptureEventStream,
+        preview_callback, void_callback, AsyncBroadcastActivityControllerHandle,
+        AsyncDiscardRecording, AsyncScreenRecorder, AsyncShowBroadcastActivity,
+        AsyncStartRecording, AsyncStopRecording, AsyncStopRecordingWithOutput,
+        SampleBufferCaptureEventStream,
     };
+    use crate::ffi::status;
+    use crate::preview_view::PreviewViewControllerHandle;
     use crate::{
-        sample_buffer_delegate::SampleBufferCaptureSession, ReplayKitError, ScreenRecorder,
+        sample_buffer_delegate::SampleBufferCaptureSession, RecordingErrorCode, ReplayKitError,
+        ScreenRecorder,
     };
+
+    extern "C" {
+        fn strdup(value: *const c_char) -> *mut c_char;
+    }
+
+    const NOT_RECORDING: &std::ffi::CStr = c"{\"kind\":\"framework\",\"domain\":\"com.apple.ReplayKit.RPRecordingErrorDomain\",\"code\":-5829,\"localizedDescription\":\"not recording\"}";
+
+    const fn assert_send_sync<T: Send + Sync>() {}
+
+    #[test]
+    fn recording_futures_are_send_and_sync() {
+        assert_send_sync::<AsyncStartRecording>();
+        assert_send_sync::<AsyncStopRecording>();
+        assert_send_sync::<AsyncStopRecordingWithOutput>();
+        assert_send_sync::<AsyncDiscardRecording>();
+        assert_send_sync::<AsyncShowBroadcastActivity>();
+    }
+
+    #[test]
+    fn async_failures_map_like_the_sync_bridge() {
+        let (future, ctx) = AsyncCompletion::<Result<(), ReplayKitError>>::create();
+        void_callback(
+            ptr::null(),
+            status::FRAMEWORK_ERROR,
+            unsafe { strdup(NOT_RECORDING.as_ptr()) },
+            ctx,
+        );
+        let Err(ReplayKitError::Framework(error)) =
+            pollster::block_on(AsyncStartRecording { inner: future })
+        else {
+            panic!("expected a framework error");
+        };
+        assert_eq!(
+            error.recording_code(),
+            Some(RecordingErrorCode::AttemptToStopNonRecording)
+        );
+        assert_eq!(error.localized_description, "not recording");
+
+        let (future, ctx) = AsyncCompletion::<Result<(), ReplayKitError>>::create();
+        void_callback(
+            ptr::null(),
+            status::INVALID_ARGUMENT,
+            unsafe { strdup(c"missing file-system path".as_ptr()) },
+            ctx,
+        );
+        assert_eq!(
+            pollster::block_on(AsyncDiscardRecording { inner: future }),
+            Err(ReplayKitError::InvalidArgument(
+                "missing file-system path".into()
+            ))
+        );
+
+        let (future, ctx) = AsyncCompletion::<Result<(), ReplayKitError>>::create();
+        void_callback(ptr::null(), status::OK, ptr::null_mut(), ctx);
+        assert_eq!(pollster::block_on(AsyncStartRecording { inner: future }), Ok(()));
+    }
+
+    #[test]
+    fn preview_completions_carry_typed_errors() {
+        let (future, ctx) =
+            AsyncCompletion::<Result<Option<PreviewViewControllerHandle>, ReplayKitError>>::create();
+        preview_callback(
+            ptr::null(),
+            status::FRAMEWORK_ERROR,
+            unsafe { strdup(NOT_RECORDING.as_ptr()) },
+            ctx,
+        );
+        assert!(matches!(
+            pollster::block_on(AsyncStopRecording { inner: future }),
+            Err(ReplayKitError::Framework(_))
+        ));
+
+        let (future, ctx) =
+            AsyncCompletion::<Result<Option<PreviewViewControllerHandle>, ReplayKitError>>::create();
+        preview_callback(ptr::null(), status::OK, ptr::null_mut(), ctx);
+        assert!(matches!(
+            pollster::block_on(AsyncStopRecording { inner: future }),
+            Ok(None)
+        ));
+    }
+
+    #[test]
+    fn stop_recording_with_output_rejects_invalid_paths() {
+        let recorder = ScreenRecorder::shared().expect("shared recorder");
+        let nul = pollster::block_on(AsyncScreenRecorder::stop_recording_with_output(
+            &recorder,
+            "target/bad\0path.mov",
+        ));
+        assert!(matches!(nul, Err(ReplayKitError::InvalidArgument(_))));
+
+        let non_utf8 = Path::new(OsStr::from_bytes(b"target/\xff.mov"));
+        let result = pollster::block_on(AsyncScreenRecorder::stop_recording_with_output(
+            &recorder, non_utf8,
+        ));
+        assert!(matches!(result, Err(ReplayKitError::InvalidArgument(_))));
+    }
 
     #[test]
     fn async_broadcast_activity_show_rejects_nul_extension_identifier() {

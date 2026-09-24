@@ -5,10 +5,28 @@ import ReplayKit
 // MARK: - Async completions (non-blocking callback-based pattern)
 
 /// Callback for operations that return void
-public typealias RKAsyncCompletion = @convention(c) (UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafeMutableRawPointer) -> Void
+public typealias RKAsyncCompletion = @convention(c) (
+    UnsafeRawPointer?,
+    Int32,
+    UnsafeMutablePointer<CChar>?,
+    UnsafeMutableRawPointer
+) -> Void
 
 /// Callback for stopRecording that returns a preview controller
-public typealias RKAsyncStopRecordingCompletion = @convention(c) (UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafeMutableRawPointer) -> Void
+public typealias RKAsyncStopRecordingCompletion = RKAsyncCompletion
+
+private func rkCompleteAsync(
+    _ callback: RKAsyncCompletion,
+    _ ctx: UnsafeMutableRawPointer,
+    _ error: Error?,
+    result: () -> UnsafeRawPointer? = { nil }
+) {
+    if let error {
+        callback(nil, rkStatus(for: error), rkOwnedErrorCString(error), ctx)
+    } else {
+        callback(result(), RK_OK, nil, ctx)
+    }
+}
 
 // MARK: - startRecording async
 
@@ -20,11 +38,7 @@ public func rk_screen_recorder_start_recording_async(
 ) {
     let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
     recorder.startRecording { error in
-        if let error {
-            error.localizedDescription.withCString { cb(nil, $0, ctx) }
-        } else {
-            cb(nil, nil, ctx)
-        }
+        rkCompleteAsync(cb, ctx, error)
     }
 }
 
@@ -38,12 +52,8 @@ public func rk_screen_recorder_stop_recording_async(
 ) {
     let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
     recorder.stopRecording { preview, error in
-        if let error {
-            error.localizedDescription.withCString { cb(nil, $0, ctx) }
-        } else if let preview {
-            cb(rk_retain(preview), nil, ctx)
-        } else {
-            cb(nil, nil, ctx)
+        rkCompleteAsync(cb, ctx, error) {
+            preview.map { UnsafeRawPointer(rk_retain($0)) }
         }
     }
 }
@@ -62,16 +72,12 @@ public func rk_screen_recorder_stop_recording_with_output_async(
     do {
         outputURL = try rkFileURL(from: outputPath)
     } catch {
-        error.localizedDescription.withCString { cb(nil, $0, ctx) }
+        rkCompleteAsync(cb, ctx, error)
         return
     }
-    
+
     recorder.stopRecording(withOutput: outputURL) { error in
-        if let error {
-            error.localizedDescription.withCString { cb(nil, $0, ctx) }
-        } else {
-            cb(nil, nil, ctx)
-        }
+        rkCompleteAsync(cb, ctx, error)
     }
 }
 
@@ -85,6 +91,6 @@ public func rk_screen_recorder_discard_recording_async(
 ) {
     let recorder = rk_borrow(ptr, as: RPScreenRecorder.self)
     recorder.discardRecording {
-        cb(nil, nil, ctx)
+        rkCompleteAsync(cb, ctx, nil)
     }
 }

@@ -27,6 +27,32 @@ fn run_async_case(name: &str, body: impl FnOnce() + Send + 'static) {
 }
 
 #[test]
+fn stopping_without_a_recording_fails_the_same_way_in_both_bridges() {
+    run_async_case(
+        "stopping_without_a_recording_fails_the_same_way_in_both_bridges",
+        || {
+            let recorder = ScreenRecorder::shared().expect("shared recorder");
+            assert!(!recorder.is_recording());
+
+            let sync_error = recorder
+                .stop_recording()
+                .expect_err("stopping without a recording must fail");
+            let async_error = pollster::block_on(AsyncScreenRecorder::stop_recording(&recorder))
+                .expect_err("stopping without a recording must fail");
+
+            assert_eq!(async_error, sync_error);
+            let ReplayKitError::Framework(error) = async_error else {
+                panic!("expected a framework error, got {async_error:?}");
+            };
+            assert_eq!(
+                error.recording_code(),
+                Some(RecordingErrorCode::AttemptToStopNonRecording)
+            );
+        },
+    );
+}
+
+#[test]
 #[ignore = "starts a screen recording, which requires screen-recording consent"]
 fn test_start_recording_happy_path() {
     run_async_case("test_start_recording_happy_path", || {

@@ -42,13 +42,15 @@ impl BroadcastExtensionContext {
         unsafe { ffi::rk_broadcast_extension_context_is_supported() }
     }
 
-    /// Constructs a standalone extension context.
-    ///
-    /// In a real broadcast extension, `ReplayKit` supplies the context instance.
-    pub fn new() -> Self {
-        Self {
-            ptr: unsafe { ffi::rk_broadcast_extension_context_new() },
-        }
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn from_raw_borrowed(context: *mut c_void) -> Result<Self, ReplayKitError> {
+        let mut ptr: *mut c_void = ptr::null_mut();
+        let mut err: *mut c_char = ptr::null_mut();
+        let rc = unsafe {
+            ffi::rk_broadcast_extension_context_retain(context, &raw mut ptr, &raw mut err)
+        };
+        result_from_status(rc, err)?;
+        Ok(Self { ptr })
     }
 
     /// Returns the Objective-C class name for the wrapped context.
@@ -116,12 +118,6 @@ impl BroadcastExtensionContext {
             )
         };
         result_from_status(rc, err)
-    }
-}
-
-impl Default for BroadcastExtensionContext {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

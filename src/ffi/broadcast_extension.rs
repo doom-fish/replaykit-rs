@@ -2,7 +2,11 @@ use core::ffi::{c_char, c_void};
 
 extern "C" {
     pub fn rk_broadcast_extension_context_is_supported() -> bool;
-    pub fn rk_broadcast_extension_context_new() -> *mut c_void;
+    pub fn rk_broadcast_extension_context_retain(
+        ptr: *mut c_void,
+        out_context: *mut *mut c_void,
+        out_error: *mut *mut c_char,
+    ) -> i32;
     pub fn rk_broadcast_extension_context_load_application_info_json(
         ptr: *mut c_void,
         out_json: *mut *mut c_char,

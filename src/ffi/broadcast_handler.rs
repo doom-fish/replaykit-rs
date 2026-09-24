@@ -2,7 +2,11 @@ use core::ffi::{c_char, c_void};
 
 extern "C" {
     pub fn rk_broadcast_handler_is_supported() -> bool;
-    pub fn rk_broadcast_handler_new() -> *mut c_void;
+    pub fn rk_broadcast_handler_retain(
+        ptr: *mut c_void,
+        out_handler: *mut *mut c_void,
+        out_error: *mut *mut c_char,
+    ) -> i32;
     pub fn rk_broadcast_handler_update_service_info(
         ptr: *mut c_void,
         service_info_json: *const c_char,

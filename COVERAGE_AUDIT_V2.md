@@ -1,12 +1,12 @@
 # replaykit-rs coverage audit v2 (vs MacOSX26.2.sdk)
 
 SDK_PUBLIC_SYMBOLS: 18
-VERIFIED: 17
-GAPS: 1
+VERIFIED: 18
+GAPS: 0
 EXEMPT: 4
-COVERAGE_PCT: 94.4
+COVERAGE_PCT: 100.0
 
-Audit methodology: Walked ReplayKit umbrella header and all constituent headers (RPScreenRecorder.h, RPPreviewViewController.h, RPBroadcast.h, RPBroadcastExtension.h, RPError.h, RPBroadcastConfiguration.h) to enumerate public @interface, @protocol, typedef enum, and extern const symbols. Filtered out symbols with `API_UNAVAILABLE(macos)`, iOS-only annotations without macOS counterpart, and deprecated-without-macOS items. The framework surface is primarily iOS; ReplayKit on macOS (11.0+) covers screen recording, preview, broadcast control, and broadcast extension handling. 17 of the 18 macOS-available symbols are wrapped by the crate's safe Rust API; `RPBroadcastSampleHandler` is a gap. The count is top-level only and does not measure member coverage or whether a wrapped extension-side object has any effect outside an extension (see `COVERAGE.md`). The ReplayKit headers in MacOSX26.5.sdk declare the same 18 macOS symbols.
+Audit methodology: Walked ReplayKit umbrella header and all constituent headers (RPScreenRecorder.h, RPPreviewViewController.h, RPBroadcast.h, RPBroadcastExtension.h, RPError.h, RPBroadcastConfiguration.h) to enumerate public @interface, @protocol, typedef enum, and extern const symbols. Filtered out symbols with `API_UNAVAILABLE(macos)`, iOS-only annotations without macOS counterpart, and deprecated-without-macOS items. The framework surface is primarily iOS; ReplayKit on macOS (11.0+) covers screen recording, preview, broadcast control, and broadcast extension handling. All 18 macOS-available symbols are wrapped by the crate's Rust API. The count is top-level only and does not measure member coverage: the extension-side types wrap objects passed in with `unsafe` `from_raw_borrowed`, and `RPBroadcastSampleHandler`'s `processSampleBuffer:withType:` and lifecycle hooks are delivered to the extension's own subclass, not to Rust (see `COVERAGE.md`). The ReplayKit headers in MacOSX26.5.sdk declare the same 18 macOS symbols.
 
 ## 🟢 VERIFIED
 | Symbol | Kind | Header | Wrapped by |
@@ -25,14 +25,14 @@ Audit methodology: Walked ReplayKit umbrella header and all constituent headers 
 | `RPSampleBufferType` | enum | `RPBroadcastExtension.h` | `SampleBufferType`, `CaptureSample::sample_type` |
 | `RPVideoSampleOrientationKey` | constant | `RPBroadcastExtension.h` | `CaptureSample::video_orientation` |
 | `RPApplicationInfoBundleIdentifierKey` | constant | `RPBroadcastExtension.h` | `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY` |
+| `RPBroadcastSampleHandler` | class | `RPBroadcastExtension.h` | `BroadcastSampleHandler` (commands on the extension's own handler) |
 | `RPRecordingErrorDomain` | constant | `RPError.h` | `RP_RECORDING_ERROR_DOMAIN` |
 | `SCStreamErrorDomain` | constant | `RPError.h` | `SC_STREAM_ERROR_DOMAIN` |
 | `RPRecordingErrorCode` | enum | `RPError.h` | `RecordingErrorCode` |
 
 ## 🔴 GAPS
-| Symbol | Kind | Header | Reason |
-| --- | --- | --- | --- |
-| `RPBroadcastSampleHandler` | class | `RPBroadcastExtension.h` | Only usable as the principal class of a broadcast upload extension; `processSampleBuffer:withType:` never reaches Rust, so `BroadcastSampleHandler` returns `NotSupported` |
+
+No top-level gaps. `RPBroadcastSampleHandler` is verified for its commands only; see the notes.
 
 ## ⏭️ EXEMPT
 | Symbol | Kind | Header | Reason | SDK attribute |

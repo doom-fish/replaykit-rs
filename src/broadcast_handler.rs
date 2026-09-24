@@ -9,7 +9,7 @@ use crate::private::{cstring_from_str, json_cstring, result_from_status, take_st
 
 /// Safe wrapper around `RPBroadcastHandler`.
 pub struct BroadcastHandler {
-    ptr: *mut c_void,
+    pub(crate) ptr: *mut c_void,
 }
 
 unsafe impl Send for BroadcastHandler {}
@@ -21,11 +21,13 @@ impl BroadcastHandler {
         unsafe { ffi::rk_broadcast_handler_is_supported() }
     }
 
-    /// Constructs a new broadcast handler instance.
-    pub fn new() -> Self {
-        Self {
-            ptr: unsafe { ffi::rk_broadcast_handler_new() },
-        }
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn from_raw_borrowed(handler: *mut c_void) -> Result<Self, ReplayKitError> {
+        let mut ptr: *mut c_void = ptr::null_mut();
+        let mut err: *mut c_char = ptr::null_mut();
+        let rc = unsafe { ffi::rk_broadcast_handler_retain(handler, &raw mut ptr, &raw mut err) };
+        result_from_status(rc, err)?;
+        Ok(Self { ptr })
     }
 
     /// Returns the Objective-C class name for the wrapped handler.
@@ -60,12 +62,6 @@ impl BroadcastHandler {
             )
         };
         result_from_status(rc, err)
-    }
-}
-
-impl Default for BroadcastHandler {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

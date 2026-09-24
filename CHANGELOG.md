@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** Observer handlers (`ScreenRecorder::observe`, `ScreenRecorder::observe_detailed`, `PreviewViewController::observe`, `BroadcastController::observe`) and `SampleBufferDelegate` implementations must be `Send + Sync`.
 - **Breaking:** `CameraPreviewView`, `PreviewViewController`, and `PreviewViewControllerObserver` are `!Send` and `!Sync`. `ScreenRecorder::camera_preview_view`, `CameraPreviewView::is_hidden`, `PreviewViewController::is_view_loaded`, `PreviewViewController::observe`, and `PreviewEventStream::observe` return `Result` and fail with `ReplayKitError::MainThreadRequired` off the main thread. Their `Debug` output only contains the class name.
 - **Breaking:** `ScreenRecorder::stop_recording_with_preview`, `AsyncScreenRecorder::stop_recording`, and `DetailedRecordingEvent::DidStopRecording` return preview controllers as `PreviewViewControllerHandle`.
-- **Breaking:** `BroadcastSampleHandler` is an unsupported placeholder: `is_supported_on_current_platform()` is `false` and `new()` returns `ReplayKitError::NotSupported`, because a broadcast upload extension needs an Objective-C principal class that this crate cannot provide.
+- **Breaking:** `BroadcastExtensionContext`, `BroadcastHandler`, and `BroadcastSampleHandler` no longer create standalone objects that `ReplayKit` ignores. Code running inside a broadcast extension passes its own `NSExtensionContext`, `RPBroadcastHandler`, or `RPBroadcastSampleHandler` to the new `unsafe fn from_raw_borrowed`, which checks the class, retains the object, and returns `InvalidArgument` for null or mismatched objects.
+- **Breaking:** `BroadcastSampleHandler` wraps the extension's own sample handler: `update_service_info`, `update_broadcast_url`, and `class_name` moved to `as_handler()`, and `finish_broadcast_with_error` stays. `processSampleBuffer:withType:` and the lifecycle hooks are still delivered only to the extension's Swift or Objective-C subclass.
 - **Breaking:** `SystemBroadcastPickerView`, `BroadcastConfiguration`, and `BroadcastActivityViewController` are uninhabited enums without `Default`, so their constructors can only return `NotSupported`.
 - **Breaking:** The minimum macOS version is 12.0 (was 11.0). The Swift bridge uses Swift concurrency, which only ships with the OS from macOS 12, so `Package.swift`, the link minimum and the README now say 12.0, and clip buffering lost its pre-12 `NotSupported` path.
 - Preview handles and AppKit wrappers dropped off the main thread release their object on the main queue.
@@ -35,11 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `PreviewViewControllerHandle`, a `Send + Sync` handle whose `to_controller()` opens a `PreviewViewController` on the main thread.
 - `ReplayKitError::MainThreadRequired`.
-- `BroadcastSampleHandler::unsupported_reason()`.
+- `BroadcastExtensionContext::from_raw_borrowed`, `BroadcastHandler::from_raw_borrowed`, `BroadcastSampleHandler::from_raw_borrowed`, and `BroadcastSampleHandler::as_handler`.
 
 ### Removed
 
-- **Breaking:** `BroadcastSampleHandler`'s `Default` impl and its instance methods (`class_name`, `update_service_info`, `update_broadcast_url`, `broadcast_started`, `broadcast_started_with_setup_info`, `broadcast_paused`, `broadcast_resumed`, `broadcast_finished`, `broadcast_annotated_with_application_info`, `finish_broadcast_with_error`). They acted on a standalone handler that ReplayKit never calls.
+- **Breaking:** `BroadcastExtensionContext::new`, `BroadcastHandler::new`, `BroadcastSampleHandler::new`, and their `Default` impls, which created standalone objects.
+- **Breaking:** `BroadcastSampleHandler`'s `broadcast_started`, `broadcast_started_with_setup_info`, `broadcast_paused`, `broadcast_resumed`, `broadcast_finished`, and `broadcast_annotated_with_application_info`. They invoked lifecycle hooks that `ReplayKit` calls on the extension's subclass.
 - The hidden, never-constructed `AsyncStartCapture` and `AsyncStopCapture` futures and the unused asynchronous capture exports behind them.
 
 ## [0.4.2] - 2026-06-06

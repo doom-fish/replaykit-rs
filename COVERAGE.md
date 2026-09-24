@@ -12,8 +12,8 @@ Notes:
 - The requested **RPPreviewView** area maps to Apple's `RPPreviewViewController` on macOS.
 - The requested **RPBroadcastActivityViewController** area maps to macOS `RPBroadcastActivityController`; the iOS view-controller type is surfaced explicitly as `NotSupported`.
 - The requested **RPSampleBufferDelegate** area is implemented through `RPScreenRecorder.startCapture` + `SampleBufferCaptureSession` + `SampleBufferType`; each buffer is delivered as a retained `apple_cf::cm::CMSampleBuffer`.
-- `BroadcastExtensionContext` and `BroadcastHandler` wrap `NSExtensionContext` and `RPBroadcastHandler` objects created by the crate. ReplayKit only acts on the instances it creates inside a broadcast extension, so these rows are partial.
-- Broadcast upload extensions are not supported: ReplayKit delivers samples to an `RPBroadcastSampleHandler` subclass that is the extension's principal class, which this crate cannot provide. `BroadcastSampleHandler` reports `NotSupported`.
+- `BroadcastExtensionContext`, `BroadcastHandler`, and `BroadcastSampleHandler` wrap objects that code inside a broadcast extension passes in with the `unsafe` `from_raw_borrowed` constructors; the class is checked and the object retained. The crate never creates these objects itself.
+- Acting as the extension's principal class is not supported: ReplayKit calls `processSampleBuffer:withType:` and the lifecycle hooks on an `RPBroadcastSampleHandler` subclass named in the extension's `Info.plist`, which has to be written in Swift or Objective-C.
 
 ## ReplayKit.h
 
@@ -96,24 +96,24 @@ Notes:
 
 | API | Status | Rust surface | Notes |
 | --- | --- | --- | --- |
-| `NSExtensionContext.loadBroadcastingApplicationInfoWithCompletion:` | 🟡 partial | `BroadcastExtensionContext::load_broadcasting_application_info` | Only on a context created by the crate; ReplayKit resolves it only for an extension-owned context |
+| `NSExtensionContext.loadBroadcastingApplicationInfoWithCompletion:` | ✅ | `BroadcastExtensionContext::load_broadcasting_application_info` | On the extension's context, passed in with `from_raw_borrowed` |
 | Deprecated `completeRequestWithBroadcastURL:broadcastConfiguration:setupInfo:` | ⏭️ skipped | — | Unavailable on macOS |
-| `completeRequestWithBroadcastURL:setupInfo:` | 🟡 partial | `BroadcastExtensionContext::complete_request_with_broadcast_url`, `BroadcastExtensionContext::complete_request_with_broadcast_url_and_setup_info` | Standalone context; no effect outside an extension |
-| `RPBroadcastHandler` | 🟡 partial | `BroadcastHandler` | Standalone instance created by the crate |
-| `updateServiceInfo:` | 🟡 partial | `BroadcastHandler::update_service_info` | JSON is bridged to the ReplayKit dictionary type; no effect outside an extension |
-| `updateBroadcastURL:` | 🟡 partial | `BroadcastHandler::update_broadcast_url` | No effect outside an extension |
+| `completeRequestWithBroadcastURL:setupInfo:` | ✅ | `BroadcastExtensionContext::complete_request_with_broadcast_url`, `BroadcastExtensionContext::complete_request_with_broadcast_url_and_setup_info` | On the extension's context |
+| `RPBroadcastHandler` | ✅ | `BroadcastHandler::from_raw_borrowed` | Wraps the extension's handler, including `RPBroadcastSampleHandler` subclasses |
+| `updateServiceInfo:` | ✅ | `BroadcastHandler::update_service_info` | JSON is bridged to the ReplayKit dictionary type |
+| `updateBroadcastURL:` | ✅ | `BroadcastHandler::update_broadcast_url` | |
 | `RPBroadcastMP4ClipHandler` | ⏭️ skipped | — | Unavailable on macOS |
 | `RPSampleBufferType` | ✅ | `SampleBufferType` | |
 | `RPVideoSampleOrientationKey` | ✅ | `CaptureSample::video_orientation` | Raw attachment value is forwarded |
 | `RPApplicationInfoBundleIdentifierKey` | ✅ | `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY` | |
-| `RPBroadcastSampleHandler` | ❌ not supported | `BroadcastSampleHandler` | Placeholder whose `new` returns `NotSupported`; an upload extension needs an Objective-C principal-class subclass |
+| `RPBroadcastSampleHandler` | 🟡 partial | `BroadcastSampleHandler::from_raw_borrowed`, `BroadcastSampleHandler::as_handler` | Wraps the extension's own handler; subclassing it is not supported |
 | `broadcastStartedWithSetupInfo:` | ❌ not supported | — | Hook overridden by the extension's subclass |
 | `broadcastPaused` | ❌ not supported | — | Hook overridden by the extension's subclass |
 | `broadcastResumed` | ❌ not supported | — | Hook overridden by the extension's subclass |
 | `broadcastFinished` | ❌ not supported | — | Hook overridden by the extension's subclass |
 | `broadcastAnnotatedWithApplicationInfo:` | ❌ not supported | — | Hook overridden by the extension's subclass |
-| `processSampleBuffer:withType:` | ❌ not supported | — | ReplayKit calls it on the extension's subclass; samples never reach Rust |
-| `finishBroadcastWithError:` | ❌ not supported | — | Only meaningful on the extension's own sample handler |
+| `processSampleBuffer:withType:` | ❌ not supported | — | ReplayKit calls it on the extension's own subclass, which can forward buffers to Rust itself |
+| `finishBroadcastWithError:` | ✅ | `BroadcastSampleHandler::finish_broadcast_with_error` | Accepts `ReplayKitFrameworkError` payloads |
 
 ## RPError.h
 

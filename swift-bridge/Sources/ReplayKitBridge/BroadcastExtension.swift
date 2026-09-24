@@ -16,6 +16,23 @@ private func rkBroadcastHandlerUpdateServiceInfo(
     handler.updateServiceInfo(serviceInfo)
 }
 
+private func rkRetainExtensionObject<T: AnyObject>(
+    _ ptr: UnsafeMutableRawPointer?,
+    as type: T.Type,
+    _ outObject: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    outObject?.pointee = nil
+    guard let ptr else {
+        return rkReturnBridgeError(outError, .invalidArgument("missing \(type) pointer"))
+    }
+    guard let object = Unmanaged<AnyObject>.fromOpaque(ptr).takeUnretainedValue() as? T else {
+        return rkReturnBridgeError(outError, .invalidArgument("object is not an instance of \(type)"))
+    }
+    outObject?.pointee = rk_retain(object)
+    return RK_OK
+}
+
 private func rkBroadcastHandlerUpdateBroadcastURL(
     _ handler: RPBroadcastHandler,
     broadcastURL: UnsafePointer<CChar>?
@@ -28,9 +45,13 @@ public func rk_broadcast_extension_context_is_supported() -> Bool {
     true
 }
 
-@_cdecl("rk_broadcast_extension_context_new")
-public func rk_broadcast_extension_context_new() -> UnsafeMutableRawPointer {
-    rk_retain(NSExtensionContext())
+@_cdecl("rk_broadcast_extension_context_retain")
+public func rk_broadcast_extension_context_retain(
+    _ ptr: UnsafeMutableRawPointer?,
+    _ outContext: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    rkRetainExtensionObject(ptr, as: NSExtensionContext.self, outContext, outError)
 }
 
 @_cdecl("rk_broadcast_extension_context_load_application_info_json")
@@ -87,9 +108,13 @@ public func rk_broadcast_handler_is_supported() -> Bool {
     true
 }
 
-@_cdecl("rk_broadcast_handler_new")
-public func rk_broadcast_handler_new() -> UnsafeMutableRawPointer {
-    rk_retain(RPBroadcastHandler())
+@_cdecl("rk_broadcast_handler_retain")
+public func rk_broadcast_handler_retain(
+    _ ptr: UnsafeMutableRawPointer?,
+    _ outHandler: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    rkRetainExtensionObject(ptr, as: RPBroadcastHandler.self, outHandler, outError)
 }
 
 @_cdecl("rk_broadcast_handler_update_service_info")
@@ -130,13 +155,29 @@ public func rk_broadcast_handler_update_broadcast_url(
 
 @_cdecl("rk_broadcast_sample_handler_is_supported")
 public func rk_broadcast_sample_handler_is_supported() -> Bool {
-    false
+    true
 }
 
-@_cdecl("rk_broadcast_sample_handler_unavailable_reason")
-public func rk_broadcast_sample_handler_unavailable_reason() -> UnsafeMutablePointer<CChar>? {
-    rkCString(
-        "RPBroadcastSampleHandler only works as the principal class of a broadcast upload "
-            + "extension; replaykit-rs has no subclass that forwards processSampleBuffer to Rust"
+@_cdecl("rk_broadcast_sample_handler_retain")
+public func rk_broadcast_sample_handler_retain(
+    _ ptr: UnsafeMutableRawPointer?,
+    _ outHandler: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    rkRetainExtensionObject(ptr, as: RPBroadcastSampleHandler.self, outHandler, outError)
+}
+
+@_cdecl("rk_broadcast_sample_handler_finish_broadcast_with_error")
+public func rk_broadcast_sample_handler_finish_broadcast_with_error(
+    _ ptr: UnsafeMutableRawPointer,
+    _ domain: UnsafePointer<CChar>,
+    _ code: Int64,
+    _ localizedDescription: UnsafePointer<CChar>
+) {
+    let error = NSError(
+        domain: String(cString: domain),
+        code: Int(clamping: code),
+        userInfo: [NSLocalizedDescriptionKey: String(cString: localizedDescription)]
     )
+    rk_borrow(ptr, as: RPBroadcastSampleHandler.self).finishBroadcastWithError(error)
 }

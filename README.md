@@ -21,14 +21,14 @@ The library crate is named `replaykit`.
 - macOS `RPBroadcastActivityController` through `BroadcastActivityControllerHandle::show`
 - `RPPreviewViewController` delegate callbacks and support helpers
 - `RPScreenRecorder.startCapture` via `SampleBufferCaptureSession`: every video and audio buffer arrives as a retained `apple_cf::cm::CMSampleBuffer` together with its `RPSampleBufferType` and `RPVideoSampleOrientationKey` value
-- `BroadcastExtensionContext`, `BroadcastHandler`, and `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY`. These wrap `NSExtensionContext` and `RPBroadcastHandler` objects that the crate creates itself; `ReplayKit` only acts on the instances it creates inside a broadcast extension, so calls on them have no effect in an app
+- Code running inside a broadcast extension can hand its own `NSExtensionContext`, `RPBroadcastHandler`, or `RPBroadcastSampleHandler` to `BroadcastExtensionContext`, `BroadcastHandler`, or `BroadcastSampleHandler` through their `unsafe` `from_raw_borrowed` constructors, which check the class and retain the object. The wrappers load the broadcasting app's info, complete the setup request, update the service info and broadcast URL, and finish a broadcast with an error. `RP_APPLICATION_INFO_BUNDLE_IDENTIFIER_KEY` names the bundle-identifier key
 - Explicit `NotSupported` wrappers for macOS-unavailable `RPBroadcastActivityViewController`, `RPSystemBroadcastPickerView`, and `RPBroadcastConfiguration`. Their types are uninhabited, so the constructors can only return the error
 - Typed `RPRecordingErrorCode` mapping plus replay/broadcast error domains
 - **Async API**: executor-agnostic futures for recording + broadcast-picker flows, plus bounded async streams for broadcast-controller, preview-controller, detailed recorder, and sample-buffer capture events via the `async` feature
 
 ## Not supported
 
-- Writing a broadcast upload extension. It needs an `RPBroadcastSampleHandler` subclass as the extension's principal class so `ReplayKit` can call `processSampleBuffer:withType:`, and this crate cannot provide one. `BroadcastSampleHandler::new` returns `ReplayKitError::NotSupported` with the reason.
+- Acting as a broadcast extension's principal class. `ReplayKit` calls `processSampleBuffer:withType:` and the broadcast lifecycle hooks on the `RPBroadcastSampleHandler` subclass named in the extension's `Info.plist`, and this crate cannot provide that subclass. Write it in Swift or Objective-C and pass it to Rust with `BroadcastSampleHandler::from_raw_borrowed`.
 
 ## Requirements
 

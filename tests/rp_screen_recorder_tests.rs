@@ -1,4 +1,4 @@
-use replaykit::{CameraPosition, ScreenRecorder};
+use replaykit::{CameraPosition, ReplayKitError, ScreenRecorder};
 
 #[test]
 fn camera_position_raw_values_are_stable() {
@@ -20,6 +20,30 @@ fn shared_recorder_exposes_consistent_state() {
         recorder.is_microphone_enabled()
     );
     assert_eq!(state.is_camera_enabled, recorder.is_camera_enabled());
+}
+
+#[test]
+fn unknown_camera_positions_are_rejected() {
+    let recorder =
+        ScreenRecorder::shared().expect("RPScreenRecorder.shared() should exist on macOS");
+    let before = recorder.camera_position();
+    assert!(matches!(
+        recorder.set_camera_position(CameraPosition::Unknown(99)),
+        Err(ReplayKitError::InvalidArgument(_))
+    ));
+    assert_eq!(recorder.camera_position(), before);
+}
+
+#[test]
+fn clip_exports_reject_invalid_durations() {
+    let recorder =
+        ScreenRecorder::shared().expect("RPScreenRecorder.shared() should exist on macOS");
+    for duration in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        assert!(matches!(
+            recorder.export_clip_to_output("target/never-written.mov", duration),
+            Err(ReplayKitError::InvalidArgument(_))
+        ));
+    }
 }
 
 #[test]

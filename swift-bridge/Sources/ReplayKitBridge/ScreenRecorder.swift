@@ -219,7 +219,7 @@ public func rk_screen_recorder_set_camera_enabled(_ ptr: UnsafeMutableRawPointer
 
 @_cdecl("rk_screen_recorder_camera_position")
 public func rk_screen_recorder_camera_position(_ ptr: UnsafeMutableRawPointer) -> Int32 {
-    Int32(rk_borrow(ptr, as: RPScreenRecorder.self).cameraPosition.rawValue)
+    Int32(clamping: rk_borrow(ptr, as: RPScreenRecorder.self).cameraPosition.rawValue)
 }
 
 @_cdecl("rk_screen_recorder_set_camera_position")

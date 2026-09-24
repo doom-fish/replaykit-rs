@@ -183,8 +183,14 @@ impl ScreenRecorder {
     }
 
     /// Sets the active camera position.
-    pub fn set_camera_position(&self, position: CameraPosition) {
+    pub fn set_camera_position(&self, position: CameraPosition) -> Result<(), ReplayKitError> {
+        if let CameraPosition::Unknown(raw) = position {
+            return Err(ReplayKitError::InvalidArgument(format!(
+                "camera position {raw} is neither front (1) nor back (2)"
+            )));
+        }
         unsafe { ffi::rk_screen_recorder_set_camera_position(self.ptr, position.as_raw()) };
+        Ok(())
     }
 
     /// Returns the current camera preview view when camera capture is enabled.
@@ -278,6 +284,11 @@ impl ScreenRecorder {
         output_path: P,
         duration_seconds: f64,
     ) -> Result<(), ReplayKitError> {
+        if !(duration_seconds.is_finite() && duration_seconds > 0.0) {
+            return Err(ReplayKitError::InvalidArgument(format!(
+                "clip duration must be a positive number of seconds, got {duration_seconds}"
+            )));
+        }
         let output_path = path_cstring(output_path.as_ref(), "clip output path")?;
         let mut err: *mut c_char = ptr::null_mut();
         let rc = unsafe {

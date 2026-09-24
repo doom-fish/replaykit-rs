@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `start_capture` delivers the captured sample buffers instead of per-buffer JSON summaries.
 - A recording, capture, or clip buffering that starts after the 30 s blocking timeout (for example when the consent prompt is approved late) is stopped again, so `TimedOut` always means nothing was started.
 - AppKit objects are no longer touched off the main thread, including from `Debug`.
+- Reading a camera position outside the `Int32` range no longer traps in the Swift bridge.
 
 ### Changed
 
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** Observer handlers (`ScreenRecorder::observe`, `ScreenRecorder::observe_detailed`, `PreviewViewController::observe`, `BroadcastController::observe`) and `SampleBufferDelegate` implementations must be `Send + Sync`.
 - **Breaking:** `CameraPreviewView`, `PreviewViewController`, and `PreviewViewControllerObserver` are `!Send` and `!Sync`. `ScreenRecorder::camera_preview_view`, `CameraPreviewView::is_hidden`, `PreviewViewController::is_view_loaded`, `PreviewViewController::observe`, and `PreviewEventStream::observe` return `Result` and fail with `ReplayKitError::MainThreadRequired` off the main thread. Their `Debug` output only contains the class name.
 - **Breaking:** `RecordingEvent::DidStopRecording` carries `Option<ReplayKitError>` instead of the raw JSON payload string, the `Unknown(String)` variant is gone, and `RecordingEvent` derives `PartialEq` and `Eq`. The lightweight observer receives typed values from Swift instead of JSON matched by substring.
+- **Breaking:** `ScreenRecorder::set_camera_position` returns `Result` and rejects `CameraPosition::Unknown` with `InvalidArgument`; it used to hand any raw value to ReplayKit, which stored it. `ScreenRecorder::export_clip_to_output` rejects durations that are not finite and positive before calling ReplayKit.
 - **Breaking:** `ScreenRecorderState` no longer has `has_camera_preview_view`. `state()` runs on any thread, and reading the `NSView`-typed `cameraPreviewView` there touched AppKit off the main thread; call `ScreenRecorder::camera_preview_view()` on the main thread instead.
 - **Breaking:** `ScreenRecorder::stop_recording_with_preview`, `AsyncScreenRecorder::stop_recording`, and `DetailedRecordingEvent::DidStopRecording` return preview controllers as `PreviewViewControllerHandle`.
 - **Breaking:** `BroadcastExtensionContext`, `BroadcastHandler`, and `BroadcastSampleHandler` no longer create standalone objects that `ReplayKit` ignores. Code running inside a broadcast extension passes its own `NSExtensionContext`, `RPBroadcastHandler`, or `RPBroadcastSampleHandler` to the new `unsafe fn from_raw_borrowed`, which checks the class, retains the object, and returns `InvalidArgument` for null or mismatched objects.

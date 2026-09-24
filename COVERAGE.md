@@ -35,13 +35,13 @@ Notes:
 | `-stopCaptureWithHandler:` | ✅ | `SampleBufferCaptureSession::stop` / `Drop` | Blocking bridge |
 | `-startClipBufferingWithCompletionHandler:` | ✅ | `ScreenRecorder::start_clip_buffering` | Stopped again if it starts after the 30 s timeout |
 | `-stopClipBufferingWithCompletionHandler:` | ✅ | `ScreenRecorder::stop_clip_buffering` | |
-| `-exportClipToURL:duration:completionHandler:` | ✅ | `ScreenRecorder::export_clip_to_output` | |
+| `-exportClipToURL:duration:completionHandler:` | ✅ | `ScreenRecorder::export_clip_to_output` | Rejects durations that are not finite and positive |
 | `delegate` | ✅ | `ScreenRecorder::observe`, `observe_detailed` | One multiplexing delegate shared by every observer; dropping an observer removes only that observer |
 | `available` | ✅ | `ScreenRecorder::is_available`, `ScreenRecorder::state` | |
 | `recording` | ✅ | `ScreenRecorder::is_recording`, `ScreenRecorder::state` | |
 | `microphoneEnabled` | ✅ | `is_microphone_enabled`, `set_microphone_enabled` | |
 | `cameraEnabled` | ✅ | `is_camera_enabled`, `set_camera_enabled` | |
-| `cameraPosition` | ✅ | `camera_position`, `set_camera_position`, `CameraPosition` | |
+| `cameraPosition` | ✅ | `camera_position`, `set_camera_position`, `CameraPosition` | The setter rejects `CameraPosition::Unknown` |
 | `cameraPreviewView` | ✅ | `camera_preview_view`, `CameraPreviewView` | Main-thread-only retained `NSView` wrapper |
 | Deprecated `screenRecorder:didStopRecordingWithError:previewViewController:` | ⏭️ skipped | — | Unavailable on macOS |
 | `screenRecorder:didStopRecordingWithPreviewViewController:error:` | ✅ | `observe_detailed`, `stop_recording_with_preview` | Preview controller surfaced as a `PreviewViewControllerHandle` |

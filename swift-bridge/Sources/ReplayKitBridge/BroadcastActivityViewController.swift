@@ -31,11 +31,7 @@ final class RKBroadcastActivityDelegateHolder: NSObject, RPBroadcastActivityCont
         } else if let broadcastController {
             callback(refcon, rk_retain(broadcastController), nil)
         } else {
-            callback(
-                refcon,
-                nil,
-                rkCString(#"{"kind":"framework","domain":"RPRecordingErrorDomain","code":-1,"localizedDescription":"no broadcast controller returned"}"#)
-            )
+            callback(refcon, nil, rkCString("ReplayKit returned no broadcast controller"))
         }
         activityController?.delegate = nil
         if let activityController {
@@ -77,11 +73,7 @@ public func rk_broadcast_activity_controller_show(
                 return
             }
             guard let activityController else {
-                completionCallback(
-                    refcon,
-                    nil,
-                    rkCString(#"{"kind":"framework","domain":"RPRecordingErrorDomain","code":-1,"localizedDescription":"no activity controller returned"}"#)
-                )
+                completionCallback(refcon, nil, rkCString("ReplayKit returned no broadcast activity controller"))
                 return
             }
             let holder = RKBroadcastActivityDelegateHolder(callback: completionCallback, refcon: refcon)

@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn error_events_carry_framework_errors() {
         let (context, events) = recording_context();
-        let payload = c"{\"kind\":\"framework\",\"domain\":\"RPRecordingErrorDomain\",\"code\":-5801,\"localizedDescription\":\"declined\"}";
+        let payload = c"{\"kind\":\"framework\",\"domain\":\"com.apple.ReplayKit.RPRecordingErrorDomain\",\"code\":-5801,\"localizedDescription\":\"declined\"}";
 
         unsafe {
             sample_capture_trampoline(

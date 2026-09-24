@@ -7,9 +7,9 @@ use crate::ffi::status;
 use crate::private::take_string;
 
 /// Objective-C domain used for `ReplayKit` recording and broadcast errors.
-pub const RP_RECORDING_ERROR_DOMAIN: &str = "RPRecordingErrorDomain";
+pub const RP_RECORDING_ERROR_DOMAIN: &str = "com.apple.ReplayKit.RPRecordingErrorDomain";
 /// `ScreenCaptureKit` error domain re-exported by `ReplayKit` headers.
-pub const SC_STREAM_ERROR_DOMAIN: &str = "SCStreamErrorDomain";
+pub const SC_STREAM_ERROR_DOMAIN: &str = "com.apple.ScreenCaptureKit.SCStreamErrorDomain";
 
 /// Errors returned by the `ReplayKit` bridge operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,8 +59,12 @@ pub struct ReplayKitFrameworkError {
 
 impl ReplayKitFrameworkError {
     /// Maps the framework error code into a typed `RPRecordingErrorCode` when possible.
-    pub const fn recording_code(&self) -> Option<RecordingErrorCode> {
-        RecordingErrorCode::from_i64(self.code)
+    pub fn recording_code(&self) -> Option<RecordingErrorCode> {
+        if self.domain == RP_RECORDING_ERROR_DOMAIN {
+            RecordingErrorCode::from_i64(self.code)
+        } else {
+            None
+        }
     }
 }
 
@@ -199,5 +203,70 @@ fn parse_framework_error(message: &str) -> ReplayKitError {
         })
     } else {
         ReplayKitError::Unknown(message.to_owned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::ffi::{c_char, c_void};
+    use std::ffi::CStr;
+
+    use super::{
+        RecordingErrorCode, ReplayKitFrameworkError, RP_RECORDING_ERROR_DOMAIN,
+        SC_STREAM_ERROR_DOMAIN,
+    };
+
+    extern "C" {
+        #[link_name = "RPRecordingErrorDomain"]
+        static FRAMEWORK_RECORDING_ERROR_DOMAIN: *const c_void;
+        #[link_name = "SCStreamErrorDomain"]
+        static FRAMEWORK_STREAM_ERROR_DOMAIN: *const c_void;
+        fn CFStringGetCString(
+            string: *const c_void,
+            buffer: *mut c_char,
+            buffer_size: isize,
+            encoding: u32,
+        ) -> u8;
+    }
+
+    fn framework_string(string: *const c_void) -> String {
+        let mut buffer = [0 as c_char; 256];
+        let copied =
+            unsafe { CFStringGetCString(string, buffer.as_mut_ptr(), 256, 0x0800_0100) };
+        assert_ne!(copied, 0);
+        unsafe { CStr::from_ptr(buffer.as_ptr()) }
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    #[test]
+    fn error_domains_match_the_framework_constants() {
+        assert_eq!(
+            framework_string(unsafe { FRAMEWORK_RECORDING_ERROR_DOMAIN }),
+            RP_RECORDING_ERROR_DOMAIN
+        );
+        assert_eq!(
+            framework_string(unsafe { FRAMEWORK_STREAM_ERROR_DOMAIN }),
+            SC_STREAM_ERROR_DOMAIN
+        );
+    }
+
+    #[test]
+    fn recording_codes_only_map_in_the_recording_domain() {
+        let recording = ReplayKitFrameworkError {
+            domain: RP_RECORDING_ERROR_DOMAIN.into(),
+            code: -5801,
+            localized_description: "declined".into(),
+        };
+        assert_eq!(
+            recording.recording_code(),
+            Some(RecordingErrorCode::UserDeclined)
+        );
+
+        let stream = ReplayKitFrameworkError {
+            domain: SC_STREAM_ERROR_DOMAIN.into(),
+            ..recording
+        };
+        assert_eq!(stream.recording_code(), None);
     }
 }

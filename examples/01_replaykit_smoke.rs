@@ -19,7 +19,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("microphone_enabled={}", state.is_microphone_enabled);
     println!("camera_enabled={}", state.is_camera_enabled);
     println!("camera_position={:?}", state.camera_position);
-    println!("has_camera_preview_view={}", state.has_camera_preview_view);
+    println!(
+        "has_camera_preview_view={}",
+        recorder.camera_preview_view()?.is_some()
+    );
     println!("✅ replaykit recorder OK");
     Ok(())
 }

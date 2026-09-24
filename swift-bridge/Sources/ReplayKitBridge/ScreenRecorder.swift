@@ -10,7 +10,6 @@ struct RKRecorderStatePayload: Encodable {
     let isMicrophoneEnabled: Bool
     let isCameraEnabled: Bool
     let cameraPosition: Int
-    let hasCameraPreviewView: Bool
 }
 
 struct RKRecordingErrorPayload: Encodable {
@@ -282,8 +281,7 @@ public func rk_screen_recorder_state_json(
         isRecording: recorder.isRecording,
         isMicrophoneEnabled: recorder.isMicrophoneEnabled,
         isCameraEnabled: recorder.isCameraEnabled,
-        cameraPosition: recorder.cameraPosition.rawValue,
-        hasCameraPreviewView: recorder.cameraPreviewView != nil
+        cameraPosition: recorder.cameraPosition.rawValue
     )
     guard let json = try? rkEncodeJSON(payload) else { return nil }
     return rkCString(json)

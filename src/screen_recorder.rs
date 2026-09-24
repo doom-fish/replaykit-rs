@@ -83,8 +83,6 @@ struct ScreenRecorderStatePayload {
     is_camera_enabled: bool,
     #[serde(rename = "cameraPosition")]
     camera_position: i32,
-    #[serde(rename = "hasCameraPreviewView")]
-    has_camera_preview_view: bool,
 }
 
 /// Snapshot of the current `RPScreenRecorder` state.
@@ -101,8 +99,6 @@ pub struct ScreenRecorderState {
     pub is_camera_enabled: bool,
     /// The currently selected camera position.
     pub camera_position: CameraPosition,
-    /// Whether a camera preview view is currently available.
-    pub has_camera_preview_view: bool,
 }
 
 impl From<ScreenRecorderStatePayload> for ScreenRecorderState {
@@ -113,7 +109,6 @@ impl From<ScreenRecorderStatePayload> for ScreenRecorderState {
             is_microphone_enabled: value.is_microphone_enabled,
             is_camera_enabled: value.is_camera_enabled,
             camera_position: CameraPosition::from_raw(value.camera_position),
-            has_camera_preview_view: value.has_camera_preview_view,
         }
     }
 }

@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "apple-cf"
-version = "0.11.0"
+version = "0.11.4"
 dependencies = [
  "doom-fish-utils",
 ]
@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "replaykit-rs"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "apple-cf",
  "doom-fish-utils",
